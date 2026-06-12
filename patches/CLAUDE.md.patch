@@ -1,0 +1,114 @@
+## Obsidian Knowledge Brain — Rules & Project Sync
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 以下两个 COMPILED 块由 compiler.py 自动维护。不要手动编辑。 -->
+<!-- The two COMPILED blocks below are auto-maintained by compiler.py. DO NOT EDIT MANUALLY. -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<!-- COMPILED:RULES_START -->
+<!-- COMPILED:RULES_END -->
+
+<!-- COMPILED:PROJECTS_START -->
+<!-- COMPILED:PROJECTS_END -->
+
+---
+
+## Session Annotation Rules
+
+> AI 助手必须在聊天中使用以下标注格式。这些标注会被每周扫描器自动提取和分析。
+> AI assistants MUST use the following annotation formats in chat. These are auto-extracted and analyzed by the weekly scanner.
+
+### [DECISION] — 关键决策标注 / Key Decision Annotation
+
+```
+[DECISION:{PROJECT}-D{NN}]
+决策 / Decision: {一句话描述决策内容 / One-line description}
+上下文 / Context: {做了什么、为什么 / What and why}
+替代方案 / Alternatives considered: {考虑过的其他方案 / Other options considered}
+选择理由 / Rationale: {为什么选这个方案 / Why this choice}
+[/DECISION]
+```
+
+**编号规则 / Numbering Rule**:
+- `{PROJECT}` = 项目缩写（大写），如 `WEBAPP`、`MLPIPE`
+- `D` = Decision
+- `{NN}` = 该项目内的递增序号，从 01 开始
+- **每次写决策前，必须先读 `{vault_path}/01-Projects/{project}/Memory/decisions.md` 确认下一个可用 ID**
+- 同时更新 `decisions.md`，在 YAML frontmatter 的 `decisions` 列表中追加新 ID
+
+### [ERROR] — 错误标注 / Error Annotation
+
+```
+[ERROR:{category}]
+现象 / Symptom: {错误的表现 / What went wrong}
+根因 / Root Cause: {为什么出错 / Why it happened}
+修复 / Fix: {怎么修好的 / How we fixed it}
+标签 / Tags: {comma-separated tags}
+[/ERROR]
+```
+
+**分类要求**:
+- `{category}` 必须是 `{vault_path}/04-Feedback/error-taxonomy.md` 中定义的分类之一
+- 如果不确定属于哪类，使用 `other`
+- 标签可选，用于帮助细化分类
+
+### [SESSION_SUMMARY] — 会话摘要 / Session Summary
+
+**IMPORTANT**: Must be output BEFORE neat-freak at session end. Session summary first, then tidy-up.
+
+```
+[SESSION_SUMMARY]
+session_id: {PROJECT}-S{NNN}
+date: {YYYY-MM-DD}
+projects: [{project-slug}]
+primary: {primary-project-slug}
+duration_min: {estimated minutes}
+ai_model: {model name}
+decisions:
+  - id: {PROJECT}-D{NN}
+    text: "{决策内容 / decision text}"
+    context: "{上下文 / context}"
+errors:
+  - type: "{error_category}"
+    symptom: "{错误现象 / error symptom}"
+    fix: "{修复方法 / fix}"
+summary: >
+  {一句话总结本次会话 / One-sentence session summary}
+files_produced:
+  - {relative/path/to/file}
+next_steps:
+  - {待办项 / TODO}
+[/SESSION_SUMMARY]
+```
+
+### 写入规则 / Write Rules
+
+1. **Session ID 格式**: `{PROJECT}-S{NNN}`（三位数，从 001 开始，查 `sessions/` 目录确认下一个可用 ID）
+2. **写入路径**: `{vault_path}/01-Projects/{project}/Memory/sessions/{session_id}.md`
+3. **使用模板**: 写入时请基于 `{vault_path}/01-Projects/{project}/Memory/sessions/_TEMPLATE.md`
+4. **Template 3 必填字段**: session_id、date、projects — 这三个 YAML frontmatter 字段必须填写，否则 scanner 会跳过这个 session
+5. **决策 ID 递增**: 新增的决策 ID 必须在 decisions.md 的 `decisions` 列表中追加
+6. **文件先写草稿**: 用 `summary_status: draft` 标记，用户确认后改为 `final`
+
+### 会话结束协议 / Session-End Protocol
+
+1. 先输出 `[SESSION_SUMMARY]` 块和写入 session 文件
+2. 再调用 neat-freak 整理文档和记忆
+3. 顺序不能反——SESSION_SUMMARY 先，neat-freak 后
+
+### 错误分类参考 / Error Taxonomy Reference
+
+- 错误分类词典位置: `{vault_path}/04-Feedback/error-taxonomy.md`
+- 共 11 个一级分类: R-plotting, R-package, python-encoding, nodejs, shell-cli, obsidian, data-format, api-network, git, path-filesystem, other
+- 每个分类下有 `keywords` 字段——如果你遇到的错误匹配某个分类的关键词，就使用那个分类
+- 可以根据你的项目自定义分类和关键词
+
+### 快速参考 / Quick Reference
+
+| 模板 / Template | 路径 / Path |
+|---|---|
+| Session 模板 / Session template | `{vault_path}/01-Projects/{project}/Memory/sessions/_TEMPLATE.md` |
+| 规则模板 / Rule template | `{vault_path}/00-Rules/_TEMPLATE.md` |
+| 审批卡模板 / Approval card template | `{vault_path}/00-Rules/_inbox/_TEMPLATE.md` |
+| 反馈模板 / Feedback template | `{vault_path}/01-Projects/{project}/Feedback/_TEMPLATE.md` |
+| 错误分类 / Error taxonomy | `{vault_path}/04-Feedback/error-taxonomy.md` |
