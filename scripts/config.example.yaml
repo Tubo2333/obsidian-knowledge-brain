@@ -1,74 +1,57 @@
-# Obsidian Knowledge Brain — Configuration
-# =========================================
+# Obsidian Knowledge Brain v2.0 — Configuration
+# ===============================================
 # Copy this file to config.yaml and fill in your paths.
 # config.yaml is git-ignored and never committed.
 
-version: "1.0"
+version: "2.0"
 
 # --- REQUIRED PATHS ---
 
-# Path to your Obsidian vault (will be created by setup.py if it doesn't exist)
-# e.g. ~/ObsidianBrain/  or  /home/user/vault/
+# Path to your Obsidian vault (created by setup.py if it doesn't exist)
 vault_path: ""
 
-# Path to your Claude projects directory where JSONL session files live
-# e.g. ~/.claude/projects/
+# Path to Claude projects directory where session JSONL files live
 claude_project_path: ""
 
 # Path to Python 3 interpreter
-# e.g. /usr/bin/python3  or  python3
 python_path: "python"
 
 # --- OPTIONAL PATHS ---
 
-# Path to CLAUDE.md for compiler step (auto-detected from project_root if empty)
-# If you have multiple projects, set this to the primary one
+# Path to CLAUDE.md for compiler step
 claude_md_path: ""
 
-# --- API CONFIGURATION (for LLM semantic clustering in analyzer.py) ---
+# Nutstore/backup sync path (optional — for backup.py cloud sync)
+backup_path: ""
+
+# --- API CONFIGURATION (for LLM deep analysis in analyzer.py) ---
 
 api:
-  # Path to Claude settings.json (contains API keys)
-  # e.g. ~/.claude/settings.json
+  # Path to Claude settings.json (contains API key in env block)
   settings_json: ""
 
-  # API endpoint base URL
-  # null = auto-detect from settings.json
-  # e.g. "https://api.anthropic.com/v1"
+  # API key override (null = auto-read from settings.json env.ANTHROPIC_AUTH_TOKEN)
+  key: null
+
+  # API endpoint base URL (null = auto-detect from settings.json)
   base_url: null
 
-  # Model name for clustering
-  # null = auto-detect from settings.json
-  # e.g. "claude-sonnet-4-20250514"
+  # Model name for deep analysis (null = auto-detect from settings.json)
   model: null
 
   temperature: 0.3
-  max_tokens: 2000
+  max_tokens: 4000
   max_retries: 3
   retry_backoff_sec: [2, 4, 8]
 
-# --- SCANNER SCHEDULE ---
+# --- SCANNER SCHEDULE (informational — actual scheduling via Claude Code cron) ---
 
 scan:
-  day: SUN      # MON, TUE, WED, THU, FRI, SAT, SUN
-  hour: 15      # 0-23, 24-hour format
+  day: SUN
+  hour: 15
   minute: 0
 
 # --- LOGGING ---
 
 log_level: INFO
-
-# Log directory for scanner logs (JSON Lines, 30-day retention)
-# auto-derived from vault_path/04-Feedback/_logs if empty
-log_dir: ""
-
-# --- OPTIONAL: TOPIC MAP (for auto-generated topic-index + timeline) ---
-# Maps session tags to topic groupings with bilingual labels.
-# Each entry: tag -> [topic_name, description]
-# topic_name format: "English Name / 中文名称"
-topic_map:
-  # Example entries — replace with your own tags and topics
-  example-tag: ["Example Topic / 示例主题", "Brief description of this topic area"]
-  # bug: ["Bug Fixes / 缺陷修复", "Recurring bugs and their resolutions"]
-  # api: ["API Integration / 接口集成", "External API usage patterns and pitfalls"]
-  # workflow: ["Workflow / 工作流程", "Pipeline and workflow improvements"]
+log_dir: ""    # auto-derived from vault_path/04-Feedback/_logs if empty

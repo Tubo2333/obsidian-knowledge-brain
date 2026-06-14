@@ -1,18 +1,9 @@
-"""Step 1: Backup new JSONL sessions to vault.
-
-Copies JSONL session files from the Claude projects directory into the vault's
-_raw-sessions/ folder, and generates lightweight Markdown summaries.
-
-JSONL record type detection is configurable via the `session_title_type` key
-in config.yaml. If not set, defaults to 'ai-title' (Claude Code convention).
-Set to null or 'first-user' to use the first user message as title.
-"""
-
+"""Step 1: Backup new JSONL sessions to vault."""
 import os
 import json
 import shutil
+import tempfile
 from datetime import datetime
-
 
 def run(cfg, dry_run=False, full=False):
     vault = cfg['vault_path']
@@ -22,12 +13,6 @@ def run(cfg, dry_run=False, full=False):
 
     # Load processed sessions from heartbeat
     processed = load_processed_sessions(heartbeat_path)
-
-    # Configurable JSONL record type for extracting title
-    # 'ai-title' = Claude Code convention
-    # 'first-user' = use first user message as title
-    # null = no title extraction
-    title_type = cfg.get('session_title_type', 'ai-title')
 
     # Find new/changed sessions
     new_sessions = []
@@ -39,16 +24,14 @@ def run(cfg, dry_run=False, full=False):
             fp = os.path.join(root, f)
             session_id = f.replace('.jsonl', '')
 
-            # Filter: skip agent sub-sessions (inflate counts, share parent
-            # context)
+            # Filter: skip agent sub-sessions (inflate counts, share parent context)
             if session_id.startswith('agent-') or 'subagent' in root.lower():
                 skipped_agent += 1
                 continue
 
             file_size = os.path.getsize(fp)
 
-            if (full or session_id not in processed or
-                    processed[session_id] != file_size):
+            if full or session_id not in processed or processed[session_id] != file_size:
                 new_sessions.append((fp, session_id, file_size))
 
     processed_count = 0
@@ -60,15 +43,19 @@ def run(cfg, dry_run=False, full=False):
             tmp_dst = dst + '.tmp'
             shutil.copy2(fp, tmp_dst)
             os.replace(tmp_dst, dst)
-
             # Generate Markdown metadata summary (atomic)
             md_path = os.path.join(raw_dir, f"{session_id}.md")
             tmp_md = md_path + '.tmp'
-            generate_md_summary_to_path(fp, tmp_md, title_type=title_type)
+            generate_md_summary_to_path(fp, tmp_md)
             os.replace(tmp_md, md_path)
-
         processed[session_id] = file_size
         processed_count += 1
+
+    # Nutstore backup — atomic via tmp directory
+    backup_vault = cfg.get('backup_path')
+    if backup_vault and os.path.exists(os.path.dirname(backup_vault)):
+        if not dry_run:
+            sync_to_nutstore_atomic(vault, backup_vault)
 
     return {
         "new_sessions": processed_count,
@@ -76,7 +63,6 @@ def run(cfg, dry_run=False, full=False):
         "processed_ids": dict(processed),
         "skipped_agent_sessions": skipped_agent
     }
-
 
 def load_processed_sessions(heartbeat_path):
     """Extract processed_sessions from heartbeat frontmatter."""
@@ -91,24 +77,14 @@ def load_processed_sessions(heartbeat_path):
     fm = yaml.safe_load(parts[1])
     return fm.get('processed_sessions', {})
 
-
-def generate_md_summary_to_path(jsonl_path, md_path, title_type='ai-title'):
+def generate_md_summary_to_path(jsonl_path, md_path):
     """Generate a lightweight Markdown summary from JSONL metadata.
-
-    Args:
-        jsonl_path: Path to the JSONL session file.
-        md_path: Output path for the Markdown summary.
-        title_type: How to extract the title:
-            - 'ai-title': Look for records with type='ai-title' (Claude Code)
-            - 'first-user': Use first user message as title
-            - None or 'none': Use 'Untitled'
-    """
+    Writes to the given path (caller handles atomicity)."""
     with open(jsonl_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
     first_ts, last_ts, title = None, None, None
     user_msgs = []
-
     for line in lines[:50]:  # Sample first 50 lines for metadata
         try:
             rec = json.loads(line)
@@ -116,47 +92,64 @@ def generate_md_summary_to_path(jsonl_path, md_path, title_type='ai-title'):
                 first_ts = rec['timestamp']
             if 'timestamp' in rec:
                 last_ts = rec['timestamp']
-
-            # Configurable title extraction
-            if title_type and title_type.lower() not in ('none', 'null', ''):
-                if (title_type == 'ai-title' and
-                        rec.get('type') == 'ai-title'):
-                    title = rec.get('title', '')
-                elif (title_type == 'first-user' and
-                        rec.get('type') == 'user' and
-                        'message' in rec and not title):
-                    msg = rec['message']
-                    if isinstance(msg, str):
-                        title = msg[:100]
-                    elif isinstance(msg, dict):
-                        content = msg.get('content', [])
-                        if isinstance(content, list) and content:
-                            first_block = content[0]
-                            if isinstance(first_block, dict):
-                                title = first_block.get('text', '')[:100]
-                        elif isinstance(content, str):
-                            title = content[:100]
-
+            if rec.get('type') == 'ai-title':
+                title = rec.get('title', '')
             if rec.get('type') == 'user' and 'message' in rec:
-                msg = rec['message'][:200]
-                if isinstance(msg, str):
-                    user_msgs.append(msg)
+                msg = rec['message']
+                if isinstance(msg, dict):
+                    # Anthropic API format: message.content is a list of blocks
+                    msg_text = str(msg.get('content', ''))[:200]
+                elif isinstance(msg, list):
+                    msg_text = str(msg)[:200]
+                elif isinstance(msg, str):
+                    msg_text = msg[:200]
+                else:
+                    msg_text = str(msg)[:200]
+                if msg_text:
+                    user_msgs.append(msg_text)
         except json.JSONDecodeError:
             continue
 
     with open(md_path, 'w', encoding='utf-8') as f:
-        f.write("---\n")
+        f.write(f"---\n")
         f.write(f"date: {first_ts[:10] if first_ts else 'unknown'}\n")
         f.write(f"title: \"{title or 'Untitled'}\"\n")
         f.write(f"messages_sampled: {len(user_msgs)}\n")
-        f.write("---\n\n")
+        f.write(f"---\n\n")
         f.write(f"# {title or 'Untitled Session'}\n\n")
         f.write(f"Date: {first_ts[:10] if first_ts else 'unknown'}\n\n")
-        f.write("## User Messages (first 200 chars each)\n\n")
+        f.write(f"## User Messages (first 200 chars each)\n\n")
         for i, msg in enumerate(user_msgs[:5]):
             f.write(f"{i+1}. {msg}\n")
-
 
 def generate_md_summary(jsonl_path, md_path):
     """DEPRECATED: use generate_md_summary_to_path instead."""
     generate_md_summary_to_path(jsonl_path, md_path)
+
+def sync_to_nutstore_atomic(vault_path, backup_path):
+    """Copy key vault files to Nutstore backup directory atomically.
+    Uses .tmp directory approach to avoid sync gaps."""
+    import shutil
+    key_dirs = ['00-Rules', '01-Projects', '03-Maps', '04-Feedback']
+    tmp_backup = backup_path + '.tmp'
+
+    # Remove stale tmp if exists
+    if os.path.exists(tmp_backup):
+        shutil.rmtree(tmp_backup)
+
+    os.makedirs(tmp_backup, exist_ok=True)
+
+    for d in key_dirs:
+        src = os.path.join(vault_path, d)
+        dst = os.path.join(tmp_backup, d)
+        if os.path.exists(src):
+            shutil.copytree(src, dst)
+
+    # Atomic swap: remove old, rename new
+    if os.path.exists(backup_path):
+        shutil.rmtree(backup_path)
+    os.rename(tmp_backup, backup_path)
+
+def sync_to_nutstore(vault_path, backup_path):
+    """DEPRECATED: use sync_to_nutstore_atomic instead."""
+    sync_to_nutstore_atomic(vault_path, backup_path)

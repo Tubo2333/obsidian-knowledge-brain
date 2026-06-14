@@ -1,180 +1,210 @@
-# 设计原理与架构决策 / Design Rationale & Architecture Decisions
+# Design Rationale & Architecture Decisions v2.0
 
-> 本文档记录了 Obsidian 知识大脑系统的核心设计决策及其背后的"为什么"。
-> This document captures core design decisions and the "why" behind them.
-
----
-
-## 一、为什么选 Obsidian + Markdown？/ 1. Why Obsidian + Markdown?
-
-### 决策 / Decision
-用 Obsidian Vault（Markdown 文件 + YAML frontmatter）作为唯一数据源，而不是数据库、REST API、或专用存储格式。
-
-### 不选数据库的理由 / Why Not a Database
-
-| 数据库的问题 / Database Problem | 解释 / Explanation |
-|---|---|
-| **AI 工具只能通过代码访问** / AI can only access via code | 每次读写都要写 Python/SQL 代码，增加摩擦。Markdown 文件可以直接读写。 |
-| **工具锁死** / Tool lock-in | 换了 AI 工具（如从 Claude Code 换到 Codex）就要重写数据库连接代码。Markdown 是通用的。 |
-| **人类不可读** / Not human-readable | 你不能用 Obsidian 打开 SQLite 浏览规则。你需要在聊天之外看到和编辑规则。 |
-| **版本控制困难** / Version control difficult | Markdown 文件可以直接 `git diff`。数据库需要 dump/restore。 |
-| **跨平台脆弱** / Cross-platform fragility | SQLite 在不同 OS 上行为一致但备份/迁移麻烦。文件就是文件。 |
-
-### 不选专用 API 的理由 / Why Not a Custom API
-一个中间服务器会增加单点故障。AI 可以直接读写文件系统（这是它和人类共用的界面），不需要在中间加一层 API。
-
-### Markdown 文件的优势 / Markdown Advantages
-- **人类直接可读可写** — 你可以在 Obsidian 里打开、编辑、添加笔记
-- **AI 直接可读可写** — 所有主流 AI 工具都能读写 Markdown
-- **版本控制友好** — `git diff` 清晰显示改了什么
-- **简单** — 不需要安装数据库、不需要跑服务、不需要维护 schema migration
-- **可移植** — 整个 vault 就是一个文件夹，拷贝到任何地方都能用
-
-### YAML Frontmatter 的角色 / The Role of YAML Frontmatter
-Markdown 正文是人类阅读的。YAML frontmatter 是给脚本和 Dataview 读的结构化数据。两条通道互不干扰。
+> This document captures core design decisions for the Obsidian Knowledge Brain v2.0 and the "why" behind each.
 
 ---
 
-## 二、为什么是三层金字塔？/ 2. Why a Three-Layer Pyramid?
+## 1. Why Four-Layer Evolution? (v2.0 New)
 
-### 三层结构 / Three Layers
+### The Problem with v1.0's Single-Layer Design
+
+v1.0 had one trigger: a weekly cron job. This meant:
+- **Knowledge vacuum**: Close a session on Monday, the scanner runs Sunday — 6 days of stale knowledge
+- **No real-time feedback**: The AI in session N+1 doesn't know what happened in session N
+- **Single point of failure**: If the cron didn't fire (computer off), nothing was learned
+
+### The v2.0 Solution: Four Independent Layers
+
+| Layer | Trigger | Latency | Failure Mode |
+|-------|---------|---------|-------------|
+| L1: Instant Annotation | AI outputs [DECISION]/[ERROR] | Instant (in-session) | AI forgets to annotate (mitigated by Priority 0 in CLAUDE.md) |
+| L2: Auto-Harvest | Stop hook + SessionStart hook | Seconds (session boundary) | Hook doesn't fire (mitigated by dual-hook design) |
+| L3: Deep Analysis | Daily cron 14:07 | Hours | Computer off (mitigated by missed-scan catch-up in runner.py) |
+| L4: Manual Sync | User says "收尾" | On demand | User forgets (mitigated by neat-freak reminder patterns) |
+
+**Key insight**: No single layer needs to be 100% reliable. The four layers compensate for each other. A session missed by Stop hook is caught by SessionStart hook or daily cron.
+
+---
+
+## 2. Why SessionStart Hook? (v2.0 New)
+
+### The Knowledge Vacuum Problem
+
+User workflow: "Do work in Window A → handoff → close A → open Window B → continue."
+
+Without SessionStart hook:
+- Window A closes → Stop hook might not fire (Ctrl+C twice, kill -9, etc.)
+- Window B opens → AI loads old Agent Memory → doesn't know what happened in Window A
+- Wait until 14:07 cron → 3-hour vacuum
+
+With SessionStart hook:
+- Window B opens → SessionStart hook fires → scans 48h of unprocessed transcripts → harvests them → Agent Memory updated
+- AI initializes with fresh knowledge from Window A
+- Vacuum closed: seconds, not hours
+
+### Design Choice: 48-Hour Window
+
+Why 48 hours, not 24? Covers the "close at 11pm, open at 9am next day" pattern. Why not 7 days? Too wide — would repeatedly scan the same transcripts (harvested by Stop hook and cron already).
+
+---
+
+## 3. Why Root-Cause Analysis Instead of Counting? (v2.0 New)
+
+### What v1.0 Did
 
 ```
-跨项目规则 / Cross-Project Rules     ← 你审批 / You approve
-    ↑ 自动晋升 / Auto-promote
-项目记忆 / Project Memory            ← AI 自动写 / AI writes
-    ↑ 自动摘要 / Auto-summarize
-会话记录 / Session Records           ← 原始 JSONL / Raw JSONL
+Scan sessions → count error types → "shell-cli_curl_ssl: 4 occurrences" → approval card "(TBD)"
 ```
 
-### 设计理由 / Rationale
+### What v2.0 Does
 
-**问题**: 单次对话的知识（"Redis 连接超时，加大连接池"）只在那一刻有价值。如果不提炼，永远是孤岛。
-**解法**: 三层提炼管道——任何知识要成为"规则"，必须经过三层验证，缺一不可:
+```
+Scan sessions → find 6 error types → cluster by ROOT CAUSE:
+  - shell-cli_curl_ssl + api-network_gfw_rst → SAME root: GFW interference
+  - path-filesystem_file_not_found → root: Windows path separator
+  - R-package_package_not_found → root: non-standard R library path
+→ For each root cause, extract ONE principle that prevents ALL symptoms
+→ Check if existing rules already cover this → action=reinforce (don't duplicate)
+→ Generate concrete rule text, not "TBD"
+```
 
-1. **出现次数验证** — 同一个错误在同一个项目出现多次（session 层验证）
-2. **跨项目验证** — 同一个错误在多个项目中都出现了（project 层验证）——这才是真正的"跨项目模式"
-3. **人类审批** — 你确认这条规则确实值得推广（rule 层验证）
+### Design Choice: Heuristic KB + LLM Tiered Approach
 
-**Anti-pattern 预防**: 没有三层验证，AI 会把一次性的、偶发的错误当成通用规则。比如"今天网络挂了"不代表"永远要离线模式"。
+```
+Tier 1: Heuristic Knowledge Base (ROOT_CAUSE_KB)
+  - Always runs, no API needed
+  - Maps known symptoms → root causes → principles → rule IDs
+  - Covers ~80% of real-world error patterns after initial setup
+
+Tier 2: LLM Deep Analysis (optional, API required)
+  - Runs when API key is available AND patterns >= 2
+  - Discovers NOVEL root causes not in the KB
+  - Provides richer rule text and merge suggestions
+  - Failure is non-blocking: falls back to Tier 1
+
+Tier 3: Review Flag
+  - Errors not matched by KB or LLM → flagged "review"
+  - Human reviews and (optionally) adds to KB
+```
+
+### Why Not LLM-Only?
+
+- **Cost**: Every scan hitting the API adds up
+- **Reliability**: API can be down, rate-limited, or blocked by GFW
+- **Speed**: Heuristic analysis is instant; LLM adds 2-10 seconds
+- **Transparency**: Heuristic matches are deterministic and debuggable
 
 ---
 
-## 三、为什么双通道审批？/ 3. Why Dual-Channel Approval?
+## 4. Why Agent Memory Dual-Write? (v2.0 New)
 
-### 两条审批路径 / Two Approval Paths
+### v1.0: Rules Only in CLAUDE.md
 
-| 通道 / Channel | 触发方式 / Trigger | 适合 / Best For |
-|---|---|---|
-| **Claude 会话内 / In-Chat** | AI 在聊天开始时提醒 `_inbox/` 里有待审批 | 日常、少量审批 / Daily, few proposals |
-| **Obsidian 直接操作 / Direct in Obsidian** | 你在 Obsidian 里打开审批卡，手动改 frontmatter 的 `status` | 批量审批、深度修改 / Batch review, deep edits |
+CLAUDE.md is project-scoped. Rules compiled into it only take effect in that project. Cross-project rules are invisible to other projects.
 
-### 为什么需要双通道？/ Why Both?
+### v2.0: CLAUDE.md + Agent Memory
 
-- **聊天内审批快**：AI 提醒 → 你点 Y → 完事。适合 1-2 个提案。
-- **Obsidian 审批适合深度思考**：你想仔细读每条证据、修改规则措辞，或者攒了一周的提案一次性处理。
-- **同一个文件系统**：不管用哪种方式，改的都是同一个 Markdown 文件。不存在"在聊天里批了但在 Obsidian 里看不到"的问题。
+```
+compiler.py
+    ├─→ CLAUDE.md (COMPILED:RULES block)
+    │   Project-scoped, human-visible
+    │
+    └─→ Agent Memory (C:\Users\...\.claude\projects\d--C-file\memory\)
+        Each rule → one .md file with YAML frontmatter
+        MEMORY.md index rebuilt on every compile
+        Loaded by ALL Claude Code sessions in this project scope
+```
+
+**Why Agent Memory?**
+- **Cross-session**: Agent Memory is loaded at session start, before the AI's first response
+- **Cross-project**: Memory files are shared across all sessions in the same Claude Code project scope
+- **Fast updates**: Writing a single .md file is faster than editing CLAUDE.md's marked blocks
+- **Granular**: Each rule is one file — easy to find, edit, or delete
+
+### The Timing
+
+```
+SessionStart hook fires
+    → harvests unprocessed transcripts → writes to vault
+    → (if new patterns found) triggers compiler
+    → compiler writes to Agent Memory
+    → AI system prompt assembles → loads MEMORY.md + all memory files
+    → AI starts with fresh rules
+```
+
+This is why SessionStart hook is so powerful: the entire learning cycle completes BEFORE the AI reads its context.
 
 ---
 
-## 四、原子写入模式 / 4. Atomic Write Pattern
+## 5. Why Atomic Writes + Defensive Parsing Everywhere? (v2.0 Hardened)
 
-### 问题 / Problem
-脚本在写入文件时如果崩溃（断电、OOM、被 kill），文件可能损坏——写了一半的 YAML、截断的 Markdown。
+### v1.0's Fragility
 
-### 解法 / Solution
-所有脚本遵循"原子写入"模式：
+v1.0 assumed well-formed input. Real-world transcripts have:
+- Messages that are dicts, lists, or strings (Anthropic API format variation)
+- YAML frontmatter with `datetime.date` objects (Python YAML parsing quirk)
+- GBK-encoded Chinese characters on Windows stdout
+- Missing or empty fields in session summaries
+
+### v2.0's Defense-in-Depth
+
+Every function that reads external data validates it:
+```python
+# analyzer.py: defensive taxonomy loading
+taxonomy = yaml.safe_load(parts[1])
+if not isinstance(taxonomy, dict):
+    return {"categories": []}  # graceful degradation
+
+# backup.py: defensive message parsing
+if isinstance(msg, dict):
+    msg_text = str(msg.get('content', ''))[:200]
+elif isinstance(msg, list):
+    msg_text = str(msg)[:200]
+elif isinstance(msg, str):
+    msg_text = msg[:200]
+
+# reporter.py: defensive date handling
+if hasattr(d, 'isoformat'):
+    ds = d.isoformat()[5:]  # datetime.date → string
+elif isinstance(d, str) and len(d) >= 10:
+    ds = d[5:]
+```
+
+### UTF-8 Enforcement on Windows
 
 ```python
-# 1. 把新内容写到一个临时文件
-with open(target_path + ".tmp", "w", encoding="utf-8") as f:
-    yaml.dump(data, f)
-
-# 2. 原子替换（OS 级别的 rename 是原子的）
-os.replace(target_path + ".tmp", target_path)
+# runner.py: force UTF-8 on Windows
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ```
 
-`os.replace()` 在 Linux/macOS/Windows 上都是原子操作——要么旧文件还在，要么新文件已经替换完成。永远不存在"半个文件"的状态。
-
-### 备份 / Rollback
-每次写操作前，当前文件会被复制到 `04-Feedback/_rollback/{date}/`。保留最近 4 周的备份。
+Without this, emoji and Chinese characters crash with `'gbk' codec can't encode character`.
 
 ---
 
-## 五、Dry-Run 安全 / 5. Dry-Run Safety
+## 6. Why No Persistent Daemon?
 
-### 问题 / Problem
-脚本会写入 vault 的多个目录。如果逻辑有 bug，可能损坏已有的数据。
+v2.0 is event-driven, not a persistent process. Three triggers cover all needs:
 
-### 解法 / Solution
-所有脚本默认 `--dry-run` 模式：输出会打印到终端（告诉你"将会做什么"），但不会写任何文件。只有加 `--no-dry-run` 或 `--force` 才会真正写入。
+| Trigger | Frequency | CPU | Memory |
+|---------|-----------|-----|--------|
+| Stop hook | Per session end | <2s spike | ~50MB then released |
+| SessionStart hook | Per session start | <2s spike | ~50MB then released |
+| Cron | Once daily | <5s spike | ~50MB then released |
 
-在 `runner.py` 中这是由 `SafeFileWriter` 统一控制的，不是每个脚本各自管各自的。
-
----
-
-## 六、LLM 聚类分层设计 / 6. LLM Clustering Tier Design
-
-### 为什么需要 LLM？/ Why LLM?
-
-基于关键词的匹配可以找出"候选"（比如所有提到 `timeout` 的 session），但无法区分：
-- "数据库连接超时" vs "API 请求超时" vs "WebSocket 心跳超时"
-- 这三者在 keywords 里可能都是 `timeout`，但根因和修复方法完全不同
-
-### 分层设计 / Tiered Approach
-
-```
-Tier 1: 关键词预筛选 / Keyword Pre-Screening
-  └─ 用 error-taxonomy.md 的 keywords 字段从 session 中筛选候选 session
-
-Tier 2: LLM 语义聚类 / LLM Semantic Clustering
-  └─ 把 Tier 1 的候选发给 LLM，让它按"错误现象 + 根因"聚类
-
-Tier 3: 自动提案生成 / Auto-Proposal Generation
-  └─ 对 "N ≥ 3 个项目" 的聚类自动生成审批卡
-```
-
-### 为什么分层？/ Why Tiered?
-
-- **成本**：直接送 100 个 session 给 LLM 很贵（可能 50K tokens）。先关键词缩到 10 个候选，再送 LLM，成本降 90%。
-- **质量**：关键词筛选保证候选和错误分类相关，减少 LLM 的噪声。
-- **可选性**：不配 LLM API key 也能跑 Tier 1（纯关键词模式），只是聚类没那么精细。
+No background process. No memory leak. No "is it still running?" anxiety.
 
 ---
 
-## 七、版本兼容策略 / 7. Version Compatibility Strategy
+## 7. Design Anti-Patterns (What We Explicitly Avoid)
 
-### Vault 模板版本 / Vault Template Versioning
-
-- 每个模板的 YAML frontmatter 中包含 `version` 或 `vault_version` 字段
-- `setup.py` 在初始化 vault 时记录模板版本到 `config.yaml`
-- Scanner 脚本启动时检查 config 中的版本 vs 当前模板版本
-- 版本不匹配时 scanner 打印警告但不中断（向前兼容）：
-  ```
-  ⚠ vault template v1.1 available (you are on v1.0)
-     Run: python setup.py --upgrade
-  ```
-
-### Frontmatter Schema 演进 / Frontmatter Schema Evolution
-
-- **新增字段 / New fields**: 总是可选的，带默认值。不影响已有 note。
-- **移除字段 / Removed fields**: 先标记 deprecated，3 个大版本后才删除。
-- **重命名字段 / Renamed fields**: 不做——改为 add + deprecated old。
-
-### 脚本版本 / Script Version
-
-- `heartbeat.md` 中记录 `script_version`
-- 周报中会显示版本号
-- 如果版本落后超过 2 个小版本，reporter 会在周报里提醒升级
-
----
-
-## 八、设计反模式 / 8. Design Anti-Patterns (What We Explicitly Avoided)
-
-| 反模式 / Anti-Pattern | 为什么不做 / Why Not |
+| Anti-Pattern | Why Not |
 |---|---|
-| **自动应用规则（无审批）** / Auto-apply rules without approval | AI 会自己做主——这正是我们要防止的。规则必须由人类审批。 |
-| **用 JSON 存 session** / Storing sessions as JSON | JSON 人类不可读、不易编辑、git diff 困难。Markdown + YAML frontmatter 是更好的选择。 |
-| **建一个 Web 界面** / Building a web UI | Obsidian 本身就是一个很好的 UI。再建一个 Web 前端只会增加复杂度。 |
-| **实时监控 daemon** / Real-time monitoring daemon | 不需要。每周跑一次够了。知识提炼不是实时需求。 |
-| **用 embedding 向量做所有匹配** / All embeddings, all the time | 成本高、调试难、用户无法理解匹配逻辑。关键词 + LLM 的混合方案更透明、更便宜。 |
+| Auto-apply rules without approval | AI making decisions autonomously defeats the purpose |
+| Single trigger (cron only) | Knowledge vacuum of up to 7 days |
+| Counting errors instead of analyzing root causes | "6 patterns found" is useless without "WHY they happen and HOW to prevent ALL of them" |
+| Approval cards with "(TBD)" rule text | Creates busywork — the human has to write the rule from scratch |
+| Piling up rules without merging | Rule count grows indefinitely, quality degrades |
+| LLM-only analysis | Single point of failure, cost, latency |
+| Persistent daemon | Complexity, memory leaks, "is it running?" anxiety |
+| Real-time monitoring | Knowledge refinement doesn't need sub-second latency |

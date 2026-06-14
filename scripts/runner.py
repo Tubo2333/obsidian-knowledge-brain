@@ -1,51 +1,35 @@
 #!/usr/bin/env python3
-"""Obsidian Brain Weekly Scanner — Pipeline Orchestrator.
-
-Runs 5 steps in sequence: backup -> analyze -> maintain -> report -> compile.
-Each step is independently error-handled — one step failing does not abort the pipeline.
-
-Features:
-- Missed-scan catch-up: auto-enables full mode if last scan was >7 days ago
-- Scan overlap prevention: lock file prevents concurrent scans
-- Stale lock detection: locks older than 2 hours are auto-released
-- Rollback: restore files from a dated backup
-- JSON Lines structured logging with 30-day retention
-"""
-
+"""Obsidian Brain Weekly Scanner — Pipeline Orchestrator."""
 import sys
 import os
 import json
 import yaml
 import argparse
+import tempfile
 from datetime import datetime
 from config import load_config
+
+# Force UTF-8 on Windows — otherwise emoji and Chinese crash GBK stdout
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 STEPS = ["backup", "analyze", "maintain", "report", "compile"]
 LOCK_FILE = "scanner.lock"
 
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="Obsidian Brain Weekly Scanner"
-    )
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Analyze without modifying files")
-    parser.add_argument("--full", action="store_true",
-                        help="Full rescan of all sessions")
-    parser.add_argument("--rollback", metavar="DATE",
-                        help="Rollback to pre-scan state (format: YYYY-MM-DD)")
-    parser.add_argument("--step", choices=STEPS,
-                        help="Run single step only")
-    parser.add_argument("--force", action="store_true",
-                        help="Force run even if another scan is in progress")
+    parser = argparse.ArgumentParser(description="Obsidian Brain Weekly Scanner")
+    parser.add_argument("--dry-run", action="store_true", help="Analyze without modifying files")
+    parser.add_argument("--full", action="store_true", help="Full rescan of all sessions")
+    parser.add_argument("--rollback", metavar="DATE", help="Rollback to pre-scan state (format: YYYY-MM-DD)")
+    parser.add_argument("--step", choices=STEPS, help="Run single step only")
+    parser.add_argument("--force", action="store_true", help="Force run even if another scan is in progress")
     args = parser.parse_args()
 
     cfg = load_config()
-    log_dir = cfg.get('log_dir',
-                      os.path.join(cfg['vault_path'], '04-Feedback', '_logs'))
+    log_dir = cfg.get('log_dir', os.path.join(cfg['vault_path'], '04-Feedback', '_logs'))
     logger = ScanLogger(log_dir)
 
-    # ── Vault version compatibility check ──
+    # Vault version compatibility check
     vault_readme = os.path.join(cfg['vault_path'], 'README.md')
     if os.path.exists(vault_readme):
         with open(vault_readme, 'r', encoding='utf-8') as f:
@@ -56,20 +40,16 @@ def main():
                 fm = yaml.safe_load(parts[1])
                 vault_ver = fm.get('vault_version', '0.0')
                 script_ver = "1.0"
-                if (vault_ver.startswith('2.') or
-                        int(vault_ver.split('.')[0]) > 1):
-                    print(f"ERROR: Vault version {vault_ver} is incompatible "
-                          f"with script version {script_ver}")
-                    print("Please upgrade the scanner scripts or downgrade "
-                          "the vault.")
+                if vault_ver.startswith('2.') or int(vault_ver.split('.')[0]) > 1:
+                    print(f"ERROR: Vault version {vault_ver} is incompatible with script version {script_ver}")
+                    print("Please upgrade the scanner scripts or downgrade the vault.")
                     sys.exit(1)
             except Exception:
                 pass  # If we can't parse the version, proceed with caution
 
-    # ── Missed-scan catch-up ──
+    # Missed-scan catch-up: if last scan was > 7 days ago, auto-enable full mode
     # 漏扫描补跑：如果上次扫描超过7天，自动开启全量模式
-    heartbeat_path = os.path.join(cfg['vault_path'], '04-Feedback',
-                                   'heartbeat.md')
+    heartbeat_path = os.path.join(cfg['vault_path'], '04-Feedback', 'heartbeat.md')
     missed_weeks = 0
     if not args.full and os.path.exists(heartbeat_path):
         try:
@@ -85,15 +65,15 @@ def main():
                     if days_since > 7:
                         missed_weeks = days_since // 7
                         args.full = True
-                        print(f"  Last scan was {days_since} days ago, "
-                              f"~{missed_weeks} week(s) missed / "
-                              f"上次扫描距今 {days_since} 天，约 {missed_weeks} 周未扫描")
-                        print(f"  Auto-enabling full mode to catch up / "
-                              f"自动启用全量模式，补跑积压 session")
+                        print(f"⚠ 上次扫描距今 {days_since} 天，约 {missed_weeks} 周未扫描 / Last scan was {days_since} days ago, ~{missed_weeks} week(s) missed")
+                        print(f"  自动启用全量模式，补跑积压 session / Auto-enabling full mode to catch up")
+                else:
+                    # Never scanned before — first run
+                    pass
         except Exception:
             pass
 
-    # ── Scan overlap prevention ──
+    # Scan overlap prevention
     lock_path = os.path.join(cfg['vault_path'], '04-Feedback', LOCK_FILE)
     if not acquire_lock(lock_path, force=args.force):
         print("ERROR: Another scan is in progress. Use --force to override.")
@@ -107,9 +87,7 @@ def main():
             "rollback": args.rollback,
             "missed_weeks": missed_weeks
         })
-        print(f"[{datetime.now().isoformat()}] Runner starting "
-              f"(dry-run={args.dry_run}, full={args.full}, "
-              f"missed_weeks={missed_weeks})")
+        print(f"[{datetime.now().isoformat()}] Runner starting (dry-run={args.dry_run}, full={args.full}, missed_weeks={missed_weeks})")
 
         if args.rollback:
             rollback(cfg, args.rollback)
@@ -123,32 +101,24 @@ def main():
             try:
                 print(f"  Step: {step}...")
                 logger.log("step_start", {"step": step})
+                # Each step is a module import + run
                 if step == "backup":
                     from backup import run as backup_run
-                    results[step] = backup_run(cfg, dry_run=args.dry_run,
-                                                full=args.full)
+                    results[step] = backup_run(cfg, dry_run=args.dry_run, full=args.full)
                 elif step == "analyze":
                     from analyzer import run as analyze_run
-                    results[step] = analyze_run(cfg, dry_run=args.dry_run,
-                                                 full=args.full)
+                    results[step] = analyze_run(cfg, dry_run=args.dry_run, full=args.full)
                 elif step == "maintain":
                     from maintainer import run as maintain_run
-                    results[step] = maintain_run(cfg, dry_run=args.dry_run,
-                                                  step_results=results)
+                    results[step] = maintain_run(cfg, dry_run=args.dry_run, step_results=results)
                 elif step == "report":
                     from reporter import run as report_run
-                    results[step] = report_run(cfg, dry_run=args.dry_run,
-                                                step_results=results,
-                                                missed_weeks=missed_weeks)
+                    results[step] = report_run(cfg, dry_run=args.dry_run, step_results=results, missed_weeks=missed_weeks)
                 elif step == "compile":
                     from compiler import run as compile_run
-                    results[step] = compile_run(cfg, dry_run=args.dry_run,
-                                                 step_results=results)
+                    results[step] = compile_run(cfg, dry_run=args.dry_run, step_results=results)
                 print(f"    OK: {results[step]}")
-                logger.log("step_complete", {
-                    "step": step,
-                    "result_summary": str(results[step])[:200]
-                })
+                logger.log("step_complete", {"step": step, "result_summary": str(results[step])[:200]})
             except Exception as e:
                 print(f"    FAIL: {e}")
                 results[step] = {"error": str(e)}
@@ -156,13 +126,11 @@ def main():
                 # Continue to next step (don't abort pipeline)
 
         print(f"[{datetime.now().isoformat()}] Runner complete")
-        logger.log("runner_complete",
-                    {"steps_completed": list(results.keys())})
+        logger.log("runner_complete", {"steps_completed": list(results.keys())})
         cleanup_old_logs(log_dir)
         return results
     finally:
         release_lock(lock_path)
-
 
 def acquire_lock(lock_path, force=False):
     """Prevent concurrent scans. Returns True if lock acquired."""
@@ -180,7 +148,6 @@ def acquire_lock(lock_path, force=False):
         f.write(datetime.now().isoformat())
     return True
 
-
 def release_lock(lock_path):
     """Release the scan lock."""
     try:
@@ -189,12 +156,10 @@ def release_lock(lock_path):
     except OSError:
         pass
 
-
 def rollback(cfg, date_str):
     """Restore files from _rollback/{date}/ to vault."""
     import shutil
-    rollback_dir = os.path.join(cfg['vault_path'], '04-Feedback',
-                                 '_rollback', date_str)
+    rollback_dir = os.path.join(cfg['vault_path'], '04-Feedback', '_rollback', date_str)
     if not os.path.exists(rollback_dir):
         print(f"No rollback data for {date_str}")
         return
@@ -226,6 +191,8 @@ class ScanLogger:
             **data
         }
         try:
+            # Atomic append: write to tmp, then append-rename is not needed for JSONL
+            # since each line is independent. Use a simple append with newline.
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + '\n')
         except Exception:

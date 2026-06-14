@@ -5,91 +5,111 @@
 
 ---
 
-## 一、会话标注流程 / 1. Session Annotation Flow
+## 一、四层进化工作流 / 1. Four-Layer Evolution Workflow
 
-### 1.1 AI 在会话中如何标注 / How AI Annotates During a Chat
-
-AI 助手在聊天中自动插入以下标注块，无需你手动操作：
-
-#### [DECISION] — 关键决策 / Key Decision
+v2.0 用四层独立的触发机制取代了 v1.0 的单一周扫描。每层有不同的可靠性保证，互相补偿。
 
 ```
-[DECISION:{PROJECT}-D{NN}]
-决策 / Decision: 使用 Redis 替代文件缓存来存储 session 数据
-上下文 / Context: 多实例部署时文件缓存不一致，导致用户反复掉线
-替代方案 / Alternatives considered: Memcached、数据库 session、JWT-only
-选择理由 / Rationale: Redis 成熟、运维团队有经验、支持持久化
-[/DECISION]
+L1: 即时标注 → 每次决策/错误立即输出标注 (CLAUDE.md Priority 0)
+L2: Hook 收割 → Stop hook + SessionStart hook 双保险 (session_harvester.py)
+L3: 深度分析 → 每天 14:07 cron 全量扫描 (runner.py --full)
+L4: 手动收尾 → "收尾"触发 neat-freak 审计
 ```
 
-**编号规则 / Numbering**:
-- {PROJECT} 是项目缩写（大写），如 `WEBAPP`、`MLPIPE`
-- D 代表 Decision
-- {NN} 是该项目内的递增序号（从 01 开始）
-- AI 在写决策前会先查 `01-Projects/{project}/Memory/decisions.md` 确认下一个可用 ID
+关键改进: **SessionStart hook 消除了"知识真空期"** — 关旧窗口开新窗口后，新 AI 加载时就拿到上个窗口的教训。
 
-#### [ERROR] — 错误记录 / Error Record
+## 二、会话标注流程 / 2. Session Annotation Flow
 
-```
-[ERROR:{category}]
-现象 / Symptom: pd.read_csv 读取中文 CSV 时中文列名变乱码
-根因 / Root Cause: encoding="utf-8" 但文件实际是 GBK 编码
-修复 / Fix: 用 chardet 自动检测编码再读取，或读取时指定 encoding="gbk"
-标签 / Tags: python-encoding, csv, chinese
-[/ERROR]
-```
+### 2.1 v2.0 简化格式 / v2.0 Simplified Format
 
-**分类**：{category} 必须是 `04-Feedback/error-taxonomy.md` 里定义的分类之一。如果不确定分到哪类，用 `other`。
+v2.0 使用**内联格式**（inline），不再使用块格式（block）。AI 更可能遵守，harvester 更容易解析。
 
-#### [SESSION_SUMMARY] — 会话摘要 / Session Summary
-
-AI 在会话结束时自动输出，然后写入 vault。格式参见 CLAUDE.md patch。
-
-### 1.2 Session ID 格式 / Session ID Format
+#### [DECISION] — 每次技术决策后 (单行内联)
 
 ```
-{PROJECT}-S{NNN}
+[DECISION: <一句话总结> | context: <为什么>]
 ```
 
-- {PROJECT}: 项目缩写（大写）
-- S: Session
-- {NNN}: 该项目内的递增会话序号（从 001 开始，用三位数补零）
+**何时**: 选库、选算法、选架构、配置值、命名约定、workaround——任何技术选择。
+
+#### [ERROR] — 每次解决错误后 (单行内联)
+
+```
+[ERROR: type=<来自error-taxonomy> | resolution=<怎么修的>]
+```
+
+**何时**: 遇到并解决任何错误——stack trace、测试失败、构建失败、API 拒绝、数据格式问题。
+
+#### [SESSION_SUMMARY] — 会话结束时 (块格式)
+
+触发词: "好的/谢谢/完成/收尾/bye/整理"。格式见 CLAUDE.md patch。
 
 ---
 
-## 二、每周扫描管道 / 2. Weekly Scanner Pipeline
+## 三、Hook 配置 / 3. Hook Configuration
 
-### 2.1 管道概览 / Pipeline Overview
+v2.0 的关键基础设施。需要在 `~/.claude/settings.json` 中配置两个 hook：
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python path/to/scripts/session_harvester.py --mode stop"
+      }]
+    }],
+    "SessionStart": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python path/to/scripts/session_harvester.py --mode start"
+      }]
+    }]
+  }
+}
+```
+
+| Hook | 触发时机 | 收割什么 | 耗时 |
+|------|---------|---------|------|
+| Stop | 关窗口/退出 Claude Code | 当前 session 的 transcript | <2s |
+| SessionStart | 开窗口/启动 Claude Code | 48h 内未收割的 transcript | <2s |
+
+**为什么需要两个 hook？** Stop hook 在关窗口时触发——但如果用 Ctrl+C 两次或 kill -9，hook 可能不触发。SessionStart hook 在下次开窗口时补收割所有漏网之鱼。两个 hook 互为保险。
+
+## 四、深度扫描管道 / 4. Deep Scanner Pipeline (v2.0)
+
+### 4.1 管道概览 / Pipeline Overview
 
 ```
-runner.py
+runner.py --full (每天 14:07 cron)
   │
   ├── Step 1: backup.py
-  │     └── 将本周新增的聊天 JSONL 备份到 04-Feedback/_raw-sessions/
+  │     └── 将新增 JSONL transcript 备份到 vault + Nutstore
   │
-  ├── Step 2: analyzer.py
-  │     ├── 读取所有未处理的 session
-  │     ├── 用 error-taxonomy 的 keywords 做关键词预筛选
-  │     ├── (可选) LLM 语义聚类
-  │     └── 输出：候选错误模式列表
+  ├── Step 2: analyzer.py  ← v2.0 重写
+  │     ├── 关键词筛选所有 session 摘要
+  │     ├── (可选) LLM 根因分析: 找 WHY，不只是 HOW MANY
+  │     ├── 启发式知识库 (ROOT_CAUSE_KB): 离线也能做根因分析
+  │     └── 输出: learnings (根因 + 原则 + 影响 + 规则建议) + summary
   │
-  ├── Step 3: maintainer.py
-  │     ├── 检查跨项目模式: 同一模式出现在 >= 3 个项目 → 生成审批卡
-  │     ├── 规则生命周期管理: beta → active (30天)、清理 _rejected (30天)
-  │     └── 输出：审批卡（00-Rules/_inbox/）
+  ├── Step 3: maintainer.py  ← v2.0 重写
+  │     ├── 从 learnings 生成审批卡 (带具体规则文本，不再 "(TBD)")
+  │     ├── 合并检测: ≥2 规则重叠 → 建议合并
+  │     ├── 规则 reinforce: 更新已有规则的 last_triggered
+  │     └── 规则生命周期: beta→active (30天) + 过期归档 (60天)
   │
-  ├── Step 4: reporter.py
-  │     ├── 生成周报 → 04-Feedback/weekly-reports/{YYYY}-W{ww}.md
-  │     ├── 更新 growth-metrics.md
+  ├── Step 4: reporter.py  ← v2.0 重写
+  │     ├── 生成周报: 第一行就是最重要的发现
+  │     ├── growth-metrics 真实填充 (不再全是 0)
   │     ├── 更新 heartbeat.md
-  │     ├── 重建 03-Maps/ (topic-index, timeline, project-graph)
-  │     └── 输出：周报 + 地图文件
+  │     └── 重建 03-Maps/ (topic-index, timeline)
   │
-  └── Step 5: compiler.py
-        ├── 读取 00-Rules/ 中所有 active + beta 规则
-        ├── 读取当前 CLAUDE.md
-        ├── 替换 COMPILED:RULES 和 COMPILED:PROJECTS 块
-        └── 输出：更新后的 CLAUDE.md
+  └── Step 5: compiler.py  ← v2.0 新增 Agent Memory 路径
+        ├── CLAUDE.md: 替换 COMPILED:RULES + COMPILED:PROJECTS 块
+        ├── Agent Memory: 50+ 规则 .md 文件 → 下次 session 即加载
+        └── MEMORY.md index 重建
 ```
 
 ### 2.2 各步骤详解 / Step Details
