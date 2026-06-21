@@ -1,249 +1,153 @@
----
-name: obsidian-knowledge-brain
-description: Build an Obsidian vault-based AI shared knowledge brain — a four-layer real-time evolution system where every chat session feeds into automated pattern detection, root-cause analysis, and Agent Memory sync. The brain learns from every conversation, not just counts errors. Use this whenever the user wants to set up AI knowledge management, build a shared brain, create project memory systems, organize cross-session AI learning, or mentions Obsidian vault + AI agent workflow. Also trigger on phrases like "知识管理", "共享大脑", "AI 记忆系统", "跨会话学习", "session 总结", "规则自动提取".
----
+# Obsidian Knowledge Brain v3.0 / Obsidian 知识大脑 v3.0
 
-# Obsidian Knowledge Brain v2.0 / Obsidian 知识大脑 v2.0
+**Schema**: 3.0 | **Lines**: ≤200 | **Load**: Always (if skill active)
+**Platforms**: **Claude Code** — full auto (hooks + cron). **Cursor / Gemini CLI / Codex** — manual trigger (type "收尾" to save, "诊断" to bootstrap). Requires an AI Agent with file read/write. Not designed for plain-terminal or Agent-free use. / CC 全自动，其他平台需手动输入口令触发。
 
-> 不是错题本。是会学习的系统。
-> Not an error notebook. A learning system.
+**Upgrade from v2.0**: zero vault dependency (无 vault 依赖), project-local `.claude/` storage. Obsidian is now optional — open your project folder as a vault for knowledge graph visualization. / Obsidian 现为可选——将项目文件夹作为 vault 打开即可获得知识图谱可视化。
 
-## v2.0 核心升级 / What Changed from v1.0
+**What this does / 它做什么**: Every time you debug an error or make a technical decision with an AI agent, that knowledge vanishes when the session ends. This skill **remembers** — it captures your decisions and error fixes across sessions, builds a searchable knowledge base, and evolves project rules automatically. A personal project librarian that learns from every conversation. / 每次和 AI 编程解决了 bug、做了技术决策，下次对话就忘了。这个 Skill 帮你**记住**——自动捕获每次会话的决策和错误，构建可检索的知识库，持续进化项目规则。一个从每次对话中学习的项目图书管理员。
 
-| v1.0 (旧) | v2.0 (新) |
-|-----------|-----------|
-| 每周日跑一次 scanner | **三层触发**: Stop hook (关窗口) + SessionStart hook (开窗口) + Cron (每天深度扫描) |
-| 知识真空期: 关窗口后等 7 天才扫描 | **SessionStart hook**: 开新窗口立刻补收割，上一个窗口的教训秒级可用 |
-| 分析 = 数错误次数 | **根因分析**: 找到 WHY，不只是 HOW MANY。提炼一个原则防止所有同类错误 |
-| 审批卡片写 "(TBD)" | **具体规则文本**: 每条卡片带可直接使用的规则措辞 |
-| 规则只写 CLAUDE.md | **双路径**: CLAUDE.md + Agent Memory (跨 session 即时生效) |
-| 扫描后不知道学了什么 | **学习叙事**: 周报第一行告诉你"这周最重要的发现是..." |
+**Obsidian?** Not required. v3.0 stores knowledge as `.md` files in `.claude/`. Open your project as an Obsidian vault to browse the knowledge graph — purely optional. See §0a. / 非必需。用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
 
-## 这是什么 / What Is This
+→ **First time?** See `references/quickstart.md` (5-minute walkthrough / 5分钟上手).
 
-你和 AI 聊了几百次天。每次的决策、踩坑、解决方案——这些知识是最宝贵的。但如果没有系统化管理，它们就在聊天记录里烂掉。
+## 0. Critical Rule / 关键规则 (Priority 0)
 
-这个系统做一件事：**让 AI 从每一次对话中学习，下次变得更聪明。**
+**At session end, extract knowledge. / 会话结束时提取知识。** Do NOT interrupt your work to write annotations mid-session — that breaks your flow. Work normally. At session end (T2 "收尾"), review the session transcript and extract ALL technical decisions and resolved errors into `[DECISION:]` / `[ERROR:]` format. This is a memory system — it learns from completed experiences, not live interruptions. / 这是记忆系统——它从已完成的经验中学习，不是从进行中的打断中学习。
 
-This system does one thing: **makes the AI learn from every conversation, so it gets smarter next time.**
+Format: `[DECISION: <summary> | context: <why> | project: <slug> | scope: project|cross-project]` and `[ERROR: type=<from-taxonomy> | resolution=<fix> | project: <slug>]`. Missing required fields → mark `# MVA_FAIL:<field>` and leave in inbox.
 
-## 四层进化架构 / Four-Layer Evolution Architecture
+## 0a. Prerequisites / 环境要求
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ L1: 即时标注 (Instant Annotation)                          │
-│     每次决策 → [DECISION: ...]  每次错误 → [ERROR: ...]     │
-│     CLAUDE.md Priority 0 强制执行                          │
-│     可靠性: 最高 (事件驱动，不需要等任何东西)                    │
-├──────────────────────────────────────────────────────────┤
-│ L2: 自动收割 (Auto-Harvest)                               │
-│     Stop hook: 关窗口 → 收割当前 transcript → 写 vault       │
-│     SessionStart hook: 开窗口 → 扫 48h 漏网 transcript →    │
-│     补收割 → Agent Memory 更新 → AI 初始化时已是聪明版         │
-│     可靠性: 高 (系统信号 + 双保险)                            │
-├──────────────────────────────────────────────────────────┤
-│ L3: 深度分析 (Deep Analysis)                               │
-│     每天 14:07 cron → 全量扫描 → 根因分析 → 规则维护 → 周报    │
-│     不是数错误，是找根因。不是堆规则，是合并泛化。                │
-│     可靠性: 中 (电脑得开着)                                   │
-├──────────────────────────────────────────────────────────┤
-│ L4: 手动收尾 (Manual Sync)                                 │
-│     你说 "收尾/整理/sync up" → neat-freak 全量审计           │
-│     可靠性: 中 (靠人记得)                                     │
-└──────────────────────────────────────────────────────────┘
-```
+**Required / 必需**: An AI Agent platform (Claude Code, Cursor, Gemini CLI, Codex) with file read/write capability + a project directory. / 一个有文件读写能力的 AI Agent 平台 + 一个项目目录。
 
-### 实时进化闭环 / The Real-Time Evolution Loop
+**Recommended / 推荐**: Python 3.x (for hook scripts; all protocols work manually without it) + Git (version-control your knowledge base). / Python 3.x（钩子脚本）+ Git（版本控制）。
 
-```
-Session 进行中
-    ↓ AI 输出 [DECISION:] [ERROR:] (L1 — 实时)
-Session 结束
-    ↓ Stop hook → session_harvester.py (L2 — 秒级)
-    ↓ 提取标注 → 写入 vault → 触发增量扫描
-    ↓ 新模式 → 规则注入 Agent Memory
-下一个 Session 开始
-    ↓ SessionStart hook → 补收割漏网之鱼 (L2 — 秒级)
-    ↓ AI 加载 CLAUDE.md + Agent Memory → 已经更聪明
-每天 14:07
-    ↓ 全量深度扫描 → 根因分析 → 规则合并 → 周报 (L3)
-```
+**Obsidian?** Not required. v3.0 stores knowledge as plain `.md` in `.claude/`. Open your project folder as an Obsidian vault to browse the knowledge graph — purely optional. v2.0 users: old vault data preserved in `archive/`, `.claude/memory/` is the new home. / 非必需。v3.0 用纯 `.md` 存储，用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
 
-## 快速开始 / Quick Start
+## 0b. Execution Model / 执行模型
 
-### 1. 一键初始化 / One-Click Setup
+This skill needs **file read + write permissions** in your project. It will: scan your directory structure (read), create `.claude/` skeleton files (write), and optionally move old files to `archive/` (write). **Nothing outside `<project>/.claude/` and `<project>/archive/` is ever modified.** / 此 Skill 需要项目内的文件读写权限。仅触碰 `.claude/` 和 `archive/`，绝不修改项目其他文件。
 
-```bash
-cd scripts/
-python setup.py
-```
+**Phase A is TWO-PASS / 两遍执行**:
+1. **Diagnose & Plan (READ-ONLY / 只读)**: Agent scans your project, calculates chaos score, produces a plan: "I will create N files, move M files to archive/. Proceed?" No writes happen yet. Use T4 command `"诊断" / "diagnose"` to run only this pass.
+2. **Execute (WRITE / 写入)**: After you approve the plan, Agent creates the skeleton, migrates files, validates. Use T4 `"整理项目" / "bootstrap"` for full execution.
 
-回答三个问题：vault 放哪、项目根在哪、有哪些项目。自动建好全部目录。
+**Interrupted? / 中断了？** If Phase A is interrupted (permission denied, session ended), re-run `"整理项目" / "bootstrap"`. Agent reads `PHASE_A_COMPLETE` marker state and resumes from where it left off. Files already created are skipped (idempotent). / 中断后重新运行即可，已创建的文件自动跳过。
 
-### 2. 配置 CLAUDE.md / Configure CLAUDE.md
+**First run in a project?** Run `"诊断" / "diagnose"` first to see what Phase A will do before approving any writes. / 新项目先跑 `"诊断"` 看计划，再跑 `"整理项目"` 执行。
 
-把 `patches/CLAUDE.md.patch` 的内容加到你的项目 `CLAUDE.md`。这部分是 **Priority 0 标注规则** —— AI 必须在每次决策和错误时输出结构化标注。这是整个大脑的"感官系统"。
+## 1. Phase Detection / 相位检测 (Execute FIRST)
 
-### 3. 配置 Hooks / Configure Hooks
+Check `.claude/PHASE_A_COMPLETE`:
+- Exists + `status: complete` + `bootstrap_date` ≤90 days → Phase B (skip bootstrap)
+- Exists + `status: complete` + >90 days → re-validate 6 checklist items; pass→refresh date; fail→re-diagnose
+- Exists + `status: in_progress` → re-run all 6 checks (marker only stores overall result, no per-item state)
+- Corrupt YAML / missing fields → re-diagnose
 
-在 `~/.claude/settings.json` 中添加：
+3-axis check: `.claude/rules/` (≥8 valid-frontmatter files?) + `.claude/projects/` (≥1?) + `.claude/memory/` (pitfalls/ decisions/ preferences/ reference/ subdirs?). 3 green → Phase B. Any yellow/red → Phase A incremental. 2+ red → Phase A full bootstrap.
 
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python path/to/scripts/session_harvester.py --mode stop"
-      }]
-    }],
-    "SessionStart": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "python path/to/scripts/session_harvester.py --mode start"
-      }]
-    }]
-  }
-}
-```
+## 2. Phase A · Framework Bootstrap / 框架播种
 
-**这两个 hook 是把"被动存储"变成"主动学习"的关键。** Stop hook 在每次关窗口时收割，SessionStart hook 在每次开窗口时补收割漏网之鱼。
+→ Full instructions: `references/phase-a-bootstrap.md`
 
-### 4. 配定时任务 / Schedule Daily Deep Scan
+Summary: Diagnose chaos score (混沌度 0-12) → legacy automation audit (遗留自动化审计, reduced if chaos≤3) → classify raw content (parallel 3-tag labeling: IS_RULE/IS_PROJECT/IS_MEMORY) → build skeleton (CLAUDE.md + rules/ + projects/ + memory/) → migrate originals to archive/ → validate 6-item checklist → create `PHASE_A_COMPLETE` marker.
 
-Claude Code cron (推荐):
-```
-/cron 7 14 * * * durable=true "cd path/to/scripts && python runner.py --full"
-```
+## 3. T1-T4 Trigger Contracts / 触发契约
 
-### 5. 跑一次 / Run Once
+### T1 · Session Start / 会话启动 (Required)
+→ `references/t1-session-start.md`
 
-```bash
-python runner.py --full
-```
+5-step protocol: crash detection → T2 completion guard → inbox drain (MECE classify ALL annotations, always; pattern extraction gated by cold-start counter) → health summary → project briefing (≤30 lines, bilingual). Writes `.session_active` new marker.
 
-## Vault 结构 / Vault Structure
+### T2 · Session End / 会话结束 (Required)
+→ `references/t2-session-end.md`
+
+Safety net: F2 PRIMARY (user says "收尾" — the ONLY guarantee on all platforms). F1 auto on CC only. F4 catches crashes from inbox residue. No F3 (auto-checkpoint has no implementation — LLMs cannot count their own tool calls). Phase 1 quick close (① decisions ② errors ③ status ④ rule trigger update ⑤ ceiling check). Phase 2 deferred (⑥ rules created ⑦ rules outdated). MVA check before write. Anti-pollution. Delete `.session_active`. Emit `[SESSION_SUMMARY]`.
+
+### T3 · Periodic Health Check / 定期健康检查 (Recommended)
+→ `references/t3-periodic-check.md`
+
+Trigger: L1 cron / L2 T1 detects >7 days / L3 user口令. Concurrent guard: skip if `.session_active` present. 7-dim scan (hard ceiling, contradiction, orphan, GC, pattern extraction Tier 1→2→3, index rebuild, legacy back-pressure). Tier 2 default OFF. ROI tracking: `hit_rate = 0` × 30 days → auto-degrade to cold-start.
+
+### T4 · Manual Invoke / 手动调用 (On-demand)
+
+| 中文 / English | Agent Action |
+|---|---|
+| "诊断" / "diagnose" | Phase A Pass 1 (READ-ONLY): scan project → chaos score + plan. No files modified. |
+| "整理项目" / "bootstrap" | Phase A full: diagnose → plan → [confirm] → build → migrate → validate |
+| "继续播种" / "resume bootstrap" | Resume interrupted Phase A from last checkpoint |
+| "收尾" / "wrap up" | T2 F2: Phase 1 quick close (3-step) → write memory → [SESSION_SUMMARY] |
+| "健康检查" / "health check" | T3 full 7-dim scan → HEALTH_REPORT.md |
+| "规则审计" / "rule audit" | Rules-only: contradiction, staleness, ceiling, GC |
+| "记忆整理" / "memory cleanup" | MECE re-classify inbox → memory/ + dedup merge |
+| "重建索引" / "rebuild index" | Rebuild _keyword_index.json + CLAUDE.md index tables |
+| "Skill 状态" / "skill status" | Output: Phase A/B state, inbox backlog, last health check, cold-start progress |
+
+## 4. Annotation MVA Standards / 标注最低可行标准
+
+| Annotation | Required Fields | Missing → |
+|-----------|----------------|-----------|
+| `[DECISION:]` | summary + context + project | `# MVA_FAIL:<field>`, stay in inbox |
+| `[ERROR:]` | type (from error-taxonomy) + resolution + project | same |
+| `[SESSION_SUMMARY]` | decisions + errors + rules_triggered | same |
+
+Quality target: ≥90% field completeness. 3 consecutive sessions <90% → T3 warns.
+
+**Anti-pollution (反污染)**: ① [DECISION:] store only FINAL adopted solutions, never dead-end explorations. ② [ERROR:] only FIXED errors; UNRESOLVED → inbox. ③ No intermediate states (不存中间态): temporary judgments, unverified hypotheses → do NOT annotate. ④ No duplicates: same type+root_cause_id → increment `sessions_observed` counter, no new file.
+
+## 5. Cold Start Protocol / 冷启动协议
+
+`memory/` empty or `mode: cold_start`: classify+store only, no pattern extraction. Counter in `_phase1_inbox.md` YAML frontmatter (`cold_start: {total_annotations, sessions_observed, threshold: 20, mode}`). ≥20 annotations AND ≥3 sessions → switch `mode: active`, announce transition.
+
+## 6. File Manifest / 文件清单
 
 ```
-vault/
-├── README.md
-├── 用户手册.md
-│
-├── 00-Rules/                    ← 你审批的规则
-│   ├── RULE-API-001.md          ← 例如: cBioPortal API 规则
-│   ├── RULE-FIG-002.md          ← 例如: identity-fill 规则
-│   ├── _TEMPLATE.md
-│   ├── _inbox/                  ← AI 提案 (待审批)
-│   │   └── _rejected/           ← 已拒绝 (30天自动清)
-│   └── _archive/                ← 已归档
-│
-├── 01-Projects/                 ← AI 自动写
-│   └── {project}/
-│       └── Memory/
-│           ├── sessions/        ← 每次对话的结构化总结
-│           ├── decisions.md     ← 决策日志
-│           └── pitfalls.md      ← 踩坑记录
-│
-├── 03-Maps/                     ← 自动重建 (每次扫描)
-│   ├── topic-index.md           ← 按主题索引
-│   └── timeline.md              ← 按时间线
-│
-└── 04-Feedback/                 ← 自动生成
-    ├── weekly-reports/          ← 周报 (含"学到了什么")
-    ├── growth-metrics.md        ← 成长指标
-    ├── error-taxonomy.md        ← 错误分类词典
-    ├── heartbeat.md             ← 扫描心跳
-    ├── _raw-sessions/           ← JSONL 备份
-    └── _logs/                   ← 运行日志
+<templates/> 4 files     → Agent uses these to create rules/projects/pitfalls/decisions
+<references/> 10 files   → Agent loads on-demand per trigger/phase (each ≤80 lines)
+  ├── Seed data:    error-taxonomy.md, root-cause-kb.md, domain-registry.md
+  ├── Protocols:    t1-session-start.md, t2-session-end.md, t3-periodic-check.md
+  ├── Bootstrap:    phase-a-bootstrap.md
+  ├── User guides:  quickstart.md, platform-guide.md, troubleshooting.md
+SKILL.md                 → Always loaded (≤200 lines)
 ```
 
-## 脚本说明 / Scripts Reference
+## 7. Install & Config / 安装与配置
 
-| 脚本 | 干什么 | 关键特性 |
-|------|--------|----------|
-| `session_harvester.py` | **新增 v2.0** — Hook 收割器。`--mode stop` 收割当前 session，`--mode start` 补收割 48h 内漏网 transcript | 原子写入、幂等、离网工作 |
-| `runner.py` | 管道编排器。5 步: backup → analyze → maintain → report → compile | UTF-8 强制、lock 防并发 |
-| `backup.py` | JSONL transcript → vault + Nutstore 备份。过滤 agent sub-session | 原子复制、增量检测 |
-| `analyzer.py` | **v2.0 重写** — 关键词筛选 + LLM 根因分析 + 启发式兜底。输出 learnings (根因+原则+影响+规则建议) | 三层: 关键词→LLM→启发式 |
-| `maintainer.py` | **v2.0 重写** — 智能审批卡 (带具体规则文本) + 合并检测 + 规则 reinforce/touch + 过期/晋升/清理 | 不再生成 "(TBD)" |
-| `reporter.py` | **v2.0 重写** — 周报 + "学到了什么"叙事 + growth-metrics 真实填充 + 搜索索引 + 主题地图 | 第一行就是最重要的发现 |
-| `compiler.py` | **v2.0 新增 Agent Memory 路径** — CLAUDE.md 规则表 + **Agent Memory 同步** (50+ 规则 .md 文件) | 双路径: 项目 + 跨 session |
+### Where to put files / 文件放哪里
+Copy `obsidian-knowledge-brain/` into `<project>/.claude/skills/`. For non-Claude-Code platforms, run: `python scripts/install.py --platform cursor` (or `gemini`, `codex`). This replaces all `.claude/` paths with your platform's base directory. / 复制到 skill 目录后，非 CC 平台运行 `python scripts/install.py --platform cursor` 一键替换路径。
 
-## 深度分析系统 / Deep Analysis System
+### Hook config (Claude Code only, optional) / 钩子配置
+Claude Code `settings.json`:
+- `SessionStart` → `session_start.py` (T1)
+- `Stop` → `session_close.py --prompt` (T2)
+- `CronCreate` weekly → `maintainer.py --health-check` (T3)
 
-### 不是计数器，是学习者 / Not a Counter, a Learner
+### No-hook / no-Agent fallback / 无钩子降级
+If your platform has no hooks or no Agent: T1 via manually reading SKILL.md §0. T2 via typing "收尾" / "wrap up". T3 via typing "健康检查" / "health check". F3 auto-checkpoints still work if your Agent supports them. Core knowledge capture works even without hooks. / 即使没有钩子，核心知识捕获仍可通过口令手动触发。
 
-**v1.0 做的事**: 扫描 session → 发现 "R-package_package_not_found 出现 4 次" → 生成卡片 "(TBD)"
+### English-only users / 纯英语用户
+All labels and headings are bilingual (Chinese + English). If you read only English, the `/ 中文` suffix is a term annotation — you can ignore it. The body text is English-primary. See §8 for term translations if curious. / 所有标签中英双语，纯英语读者可忽略 `/ 中文` 后缀，正文以英语为主。
 
-**v2.0 做的事**: 扫描 session → 发现 4 个不同错误 (package_not_found, install_fail, bioc_version_mismatch, dependency_conflict) → 根因分析: **它们都源于同一个根因: R library 在 D:/R/library 不是默认路径** → 一条原则: "安装前先检查 D:/R/library" → 检查已有规则 RULE-R-002 已覆盖 → action=reinforce (强化现有规则，不重复创建) → 周报: "[CONFIRMED] R 包管理规则已验证有效 — 4 次错误, 2 个项目, 全部被正确引导到同一解决方案"
+## 8. FAQ / 常见问题
 
-### 根因分析知识库 / Root-Cause Knowledge Base
+**Q: Nothing happens when I install. / 安装后没反应。** A: Agent auto-loads and runs §1. No Agent → manually follow §0 and §3. The skill is a protocol, not a daemon. More recovery scenarios: `references/troubleshooting.md`.
 
-系统内置了已知根因的知识库 (`ROOT_CAUSE_KB`)，即使没有 LLM API 也能做深度分析:
+**Q: Why `.claude/`? I use Cursor. / 为什么是 `.claude/`？** A: Replace with `.cursor/` (see `references/platform-guide.md`). The folder name is convention — structure works on any platform.
 
-| 根因 | 原则 | 症状 |
-|------|------|------|
-| Windows R 4.5.2 颜色渲染 bug | identity-fill + svglite→rsvg 管线 | scale_fill_manual_grey, ragg_greyscale, ggsave_drop_color |
-| GFW 网络干扰 | 所有网络调用前检查代理 | ssl_error, gfw_rst, timeout, curl_ssl |
-| Windows 路径分隔符 | 始终用 / 不用 \\ | path_separator_mix, file_not_found |
-| R 包管理 (非标准路径) | 安装前检查 D:/R/library | install_fail, package_not_found |
-| 中文编码 (Windows) | 不用 Python 生成 .docx | gbk_utf8_mismatch, chinese_garbled_docx |
-| Rscript -e segfault | 写 .R 文件再 Rscript 执行 | segfault_rscript_e |
-| cBioPortal API 参数怪癖 | projection=DETAILED, entrezGeneId=int | http_400_wrong_param |
+**Q: How long until useful? / 多久见效？** A: ~3 sessions × ~7 annotations → 20 total → pattern extraction activates. Before that, everything is still stored — just no auto-detection yet.
 
-**LLM 模式**: 当 API key 可用时，LLM 做更精细的根因聚类——能发现知识库里没有的新模式。LLM 是增强，不是必需。
+**Q: Can I use this without any Agent? / 没 Agent 能用？** A: No. This skill requires an AI Agent to execute MECE classification, cold-start counting, and pattern extraction. Without an Agent, you have empty directories and unused templates — not a functioning knowledge system. See `references/platform-guide.md` for supported platforms. / 不行，此 Skill 需要 AI Agent 执行协议。
 
-### 规则生命周期 / Rule Lifecycle
+## 9. Bilingual Terminology / 中英术语对照
 
-```
-启发式/LLM 发现模式
-    ↓
-action=new_rule → 生成审批卡 (带具体规则文本)
-action=reinforce → 更新已有规则的 last_triggered
-action=merge → 生成合并建议卡 (≥2 条规则重叠)
-action=review → 标记需人工审查的未知模式
-    ↓
-你审批 (在 Obsidian 里或聊天里)
-    ↓
-beta (30天观察期) → active (正式规则)
-    ↓
-60天未触发 → 归档 (不是删除，移到 _archive/)
-```
-
-## 日常使用场景 / Daily Usage Scenarios
-
-### 场景 1: 正常关窗口 (知识不丢)
-
-你干完活 → 说 "收尾" → AI 输出 [SESSION_SUMMARY] → 你关窗口 → Stop hook 收割 → vault + Agent Memory 更新 → 完成
-
-### 场景 2: 换窗口继续 (知识秒传)
-
-你在窗口 A 做了交接 → X 掉 → 开窗口 B → SessionStart hook 收割窗口 A 的 transcript → Agent Memory 更新 → 窗口 B 的 AI 已经拿到窗口 A 的教训
-
-### 场景 3: 突然关掉 (知识等下次)
-
-你 Ctrl+C 两次强杀 → transcript 在磁盘上 → 下次你开窗口时 SessionStart hook 收割 → 或者等下午 14:07 cron
-
-### 场景 4: 电脑关机过夜 (知识等明天)
-
-你今天干完关机 → transcript 在磁盘 → 明天开机开 Claude Code → SessionStart hook 收割 → 下午 14:07 深度分析
-
-## 注意事项 / Important Notes
-
-- **Python 3.10+**，依赖: PyYAML, requests (LLM 模式)
-- **跨平台**: Windows/macOS/Linux
-- **不联网也能跑**: LLM 聚类是可选增强，启发式分析离线工作
-- **Obsidian 只是查看器**: vault 是纯 Markdown 文件夹，不需要 Obsidian 运行
-- **原子写入**: 所有写操作是 .tmp → os.replace，崩溃不损坏文件
-- **非破坏性**: 脚本有 --dry-run 模式
-- **Idempotent**: 收割器跑两次不会重复写入
-
-## 引用文件 / Bundled Resources
-
-- `references/architecture.md` — v2.0 设计原理和决策记录
-- `references/workflow.md` — 详细使用流程和故障排除
-- `scripts/` — 所有 Python 脚本 (v2.0 版本)
-- `templates/vault/` — Vault 模板文件
-- `patches/CLAUDE.md.patch` — CLAUDE.md Priority 0 标注规则补丁
+| English | 中文 | English | 中文 |
+|---------|------|---------|------|
+| Framework Skeleton | 框架骨架 | Memory Engine | 记忆引擎 |
+| Trigger Contract | 触发契约 | Annotation | 标注 |
+| Chaos Score | 混沌度 | Cold Start | 冷启动 |
+| MECE Classification | 互斥穷尽分类 | Pattern Extraction | 模式提取 |
+| Root Cause KB | 根因知识库 | Error Taxonomy | 错误分类法 |
+| Pitfall | 陷阱 | Decision | 决策 |
+| Health Check | 健康检查 | Bootstrap | 播种/减负 |
+| Deferred Audit | 延迟审计 | Safety Net | 兜底/安全网 |

@@ -4,10 +4,9 @@ import yaml
 import subprocess
 from datetime import datetime
 
-RULES_START = "<!-- COMPILED:RULES_START -->"
-RULES_END = "<!-- COMPILED:RULES_END -->"
-PROJECTS_START = "<!-- COMPILED:PROJECTS_START -->"
-PROJECTS_END = "<!-- COMPILED:PROJECTS_END -->"
+# ── Part A constants — SHUTDOWN per v3.0 S8.4 L1 (2026-06-21) ──
+# Removed: RULES_START/END, PROJECTS_START/END, compile_rules_section(),
+# compile_projects_section(), replace_block()
 
 MEMORY_DIR = "C:/Users/Administrator/.claude/projects/d--C-file/memory"
 MEMORY_INDEX = os.path.join(MEMORY_DIR, "MEMORY.md")
@@ -18,39 +17,10 @@ def run(cfg, dry_run=False, step_results=None):
     results = {"rules_compiled": 0, "projects_compiled": 0, "dirty": False,
                "memory_rules_written": 0, "memory_index_updated": False}
 
-    # ── Part A: CLAUDE.md compilation ──
-    # Dirty detection
-    if has_uncommitted_changes(claude_md_path):
-        results["error"] = "CLAUDE.md has uncommitted manual edits — compilation paused"
-        # Don't return — still do Agent Memory part
-    else:
-        try:
-            with open(claude_md_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            markers_ok = True
-            for marker in [RULES_START, RULES_END, PROJECTS_START, PROJECTS_END]:
-                if marker not in content:
-                    results["error"] = f"Missing marker in CLAUDE.md: {marker}"
-                    markers_ok = False
-                    break
-
-            if markers_ok:
-                rules_text = compile_rules_section(vault)
-                projects_text = compile_projects_section(vault)
-                new_content = replace_block(content, RULES_START, RULES_END, rules_text)
-                new_content = replace_block(new_content, PROJECTS_START, PROJECTS_END, projects_text)
-
-                if not dry_run:
-                    tmp_path = claude_md_path + '.tmp'
-                    with open(tmp_path, 'w', encoding='utf-8') as f:
-                        f.write(new_content)
-                    os.replace(tmp_path, claude_md_path)
-
-                results["rules_compiled"] = rules_text.count('\n')
-                results["projects_compiled"] = projects_text.count('\n')
-        except Exception as e:
-            results["claude_md_error"] = str(e)
+    # ── Part A: CLAUDE.md compilation — SHUTDOWN per v3.0 S8.4 L1 (2026-06-21) ──
+    # Part A injected Obsidian-vault rules/projects tables into CLAUDE.md via
+    # COMPILED markers. v3.0 manages rules/ and projects/ directly from
+    # .claude/rules/ and .claude/projects/ filesystem. Part A removed.
 
     # ── Part B: Agent Memory sync ──
     try:
@@ -190,94 +160,6 @@ def rebuild_memory_index():
         f.write(index_content)
     os.replace(tmp, MEMORY_INDEX)
 
-def has_uncommitted_changes(filepath):
-    """Check if file has uncommitted git changes (working tree + staged)."""
-    try:
-        # Check both unstaged and staged changes vs HEAD
-        result = subprocess.run(
-            ['git', 'diff', 'HEAD', '--name-only', filepath],
-            capture_output=True, text=True, cwd=os.path.dirname(filepath)
-        )
-        if filepath in result.stdout:
-            return True
-        # Also check untracked changes (not yet staged)
-        result2 = subprocess.run(
-            ['git', 'diff', '--name-only', filepath],
-            capture_output=True, text=True, cwd=os.path.dirname(filepath)
-        )
-        return filepath in result2.stdout
-    except Exception:
-        return False  # If git not available, assume clean
-
-def compile_rules_section(vault):
-    """Generate rules table from 00-Rules/*.md active rules."""
-    rules_dir = os.path.join(vault, '00-Rules')
-    lines = ["| Rule ID | Title | Category | Applies To | Status |",
-             "|---------|-------|----------|------------|--------|"]
-
-    for f in sorted(os.listdir(rules_dir)):
-        if not f.endswith('.md') or f.startswith('_'):
-            continue
-        fp = os.path.join(rules_dir, f)
-        try:
-            with open(fp, 'r', encoding='utf-8') as fh:
-                content = fh.read()
-            fm = yaml.safe_load(content.split('---')[1])
-            if fm.get('status') in ('active', 'beta'):
-                rule_id = fm.get('rule_id', '?')
-                title = fm.get('title', '?')
-                category = fm.get('category', '?')
-                applies = ', '.join(fm.get('applies_to', []))
-                status = fm.get('status', '?')
-                lines.append(f"| {rule_id} | {title} | {category} | {applies} | {status} |")
-        except (yaml.YAMLError, IndexError):
-            continue
-
-    return '\n'.join(lines)
-
-def compile_projects_section(vault):
-    """Generate project status table from 01-Projects/ decisions.md files."""
-    projects_dir = os.path.join(vault, '01-Projects')
-    lines = ["| Project | Decisions | Pitfalls | Last Session |",
-             "|---------|-----------|----------|-------------|"]
-
-    for proj in sorted(os.listdir(projects_dir)):
-        proj_dir = os.path.join(projects_dir, proj)
-        if not os.path.isdir(proj_dir):
-            continue
-        decisions_path = os.path.join(proj_dir, 'Memory', 'decisions.md')
-        pitfalls_path = os.path.join(proj_dir, 'Memory', 'pitfalls.md')
-        sessions_dir = os.path.join(proj_dir, 'Memory', 'sessions')
-
-        n_decisions = count_frontmatter_items(decisions_path, 'decisions')
-        n_pitfalls = count_frontmatter_items(pitfalls_path, 'pitfalls')
-        last_session = get_latest_session(sessions_dir)
-
-        lines.append(f"| {proj} | {n_decisions} | {n_pitfalls} | {last_session} |")
-
-    return '\n'.join(lines)
-
-def replace_block(content, start_marker, end_marker, new_content):
-    """Replace content between start and end markers."""
-    before = content.split(start_marker)[0]
-    after = content.split(end_marker)[1]
-    return before + start_marker + '\n' + new_content + '\n' + end_marker + after
-
-def count_frontmatter_items(path, key):
-    if not os.path.exists(path):
-        return 0
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        fm = yaml.safe_load(content.split('---')[1])
-        return len(fm.get(key, []))
-    except (yaml.YAMLError, IndexError):
-        return 0
-
-def get_latest_session(sessions_dir):
-    if not os.path.exists(sessions_dir):
-        return '-'
-    files = [f for f in os.listdir(sessions_dir) if f.endswith('.md') and not f.startswith('_')]
-    if not files:
-        return '-'
-    return sorted(files)[-1][:10]  # First 10 chars = date
+# ── Part A functions — SHUTDOWN per v3.0 S8.4 L1 (2026-06-21) ──
+# Removed: has_uncommitted_changes(), compile_rules_section(), compile_projects_section(),
+# replace_block(), count_frontmatter_items(), get_latest_session()
