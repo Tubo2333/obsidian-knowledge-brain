@@ -211,7 +211,7 @@ After answering, emit summary block:
 
 ---
 **Note**: F2 (user口令 "收尾") is the PRIMARY knowledge capture mechanism — works on ALL platforms. F3 auto-checkpoints are a best-effort bonus. T2 supplements with context, metadata, and cross-references.
-_Run: `python .claude/scripts/session_close.py --validate` after answering._""")
+_Run: `python .claude/skills/obsidian-knowledge-brain/scripts/session_close.py --validate` after answering._""")
 
 
 # ── Validate mode ───────────────────────────────────────────────────────────
