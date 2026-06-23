@@ -113,12 +113,16 @@ No plugin needed. The folder-is-vault convention works with any Markdown editor 
 ## What's Inside / 目录结构
 
 ```
-memory-brain/
+obsidian-knowledge-brain/
 ├── SKILL.md                    ← Agent skill definition / 技能定义 (≤200 lines, always loaded)
 ├── README.md                   ← This file / 本文件
 ├── LICENSE                     ← MIT
 ├── description.md              ← Marketplace listing / 技能市场描述 (≤500 chars)
 ├── templates/                  ← 4 templates for rules, projects, pitfalls, decisions / 4 个模板
+│   ├── rule.template.md
+│   ├── project.template.md
+│   ├── pitfall.template.md
+│   └── decision.template.md
 ├── references/                 ← 10 protocol & seed data files / 10 个协议和种子数据 (each ≤80 lines)
 │   ├── quickstart.md           ← 5-minute walkthrough / 5 分钟上手
 │   ├── platform-guide.md       ← Cursor/Gemini/Codex setup / 平台适配指南
@@ -130,18 +134,24 @@ memory-brain/
 │   ├── t1-session-start.md     ← Session start 5-step protocol / 会话启动协议
 │   ├── t2-session-end.md       ← Session end close protocol / 会话结束协议
 │   └── t3-periodic-check.md    ← Weekly health check 7-dim scan / 定期健康检查
-└── scripts/                    ← 18 Python scripts (v2 hook automation + v3 install.py)
-    ├── install.py              ← Cross-platform path setup / 跨平台路径安装 (NEW v3)
-    ├── session_harvester.py    ← Hook harvest: Stop + SessionStart / Hook 收割器
+└── scripts/                    ← 17 Python scripts (v3.0 hook scripts + v2 utilities)
+    ├── session_start.py        ← T1 hook: SessionStart briefing / 会话启动简报 (NEW v3.0)
+    ├── session_close.py        ← T2 hook: session-end prompt + validator / 收尾协议+验证 (NEW v3.0)
+    ├── session_harvester.py    ← Hook transcript harvester / 会话转录收割器
+    ├── install.py              ← Cross-platform path setup / 跨平台路径安装
     ├── runner.py               ← Pipeline orchestrator (5-step) / 管道编排器
     ├── analyzer.py             ← Root-cause analysis (keyword + LLM) / 根因分析
     ├── maintainer.py           ← Rule lifecycle + merge detection / 规则维护
     ├── reporter.py             ← Weekly reports + index rebuild / 周报+索引重建
-    ├── compiler.py             ← Agent Memory sync / Agent Memory 同步
+    ├── compiler.py             ← CLAUDE.md index sync / 索引同步
     ├── backup.py               ← JSONL transcript backup / 会话备份
-    ├── setup.py                ← Interactive vault setup (v2 legacy) / 交互式安装(v2 遗留)
     ├── config.py               ← Configuration loader / 配置加载器
-    └── ...                     ← 8 more utility scripts / 8 个辅助脚本
+    ├── setup.py                ← Interactive vault setup (v2 legacy) / 交互式安装 (v2 遗留)
+    ├── validate_frontmatter.py ← Frontmatter field validation / 元数据字段校验
+    ├── link_validator.py       ← Wiki-link integrity checker / 双向链接完整性检查
+    ├── score_sessions.py       ← Session scoring utility / 会话评分工具
+    ├── reformat_tables.py      ← Table reformatter / 表格格式化
+    └── config.example.yaml     ← Sample configuration / 配置示例
 ```
 
 ---
