@@ -23,10 +23,10 @@ import argparse
 from datetime import datetime, timezone, timedelta
 
 # ── Configuration ──────────────────────────────────────────────
-VAULT_PATH = "D:/Obsidian/a"
-AGENT_MEMORY = "C:/Users/Administrator/.claude/projects/d--C-file"
+VAULT_PATH = os.environ.get("OBSIDIAN_VAULT_PATH", "D:/Obsidian/a")
+AGENT_MEMORY = str(Path.home() / ".claude" / "projects" / "d--C-file")
 SCANNER_DIR = os.path.dirname(os.path.abspath(__file__))
-PYTHON = "C:/Users/Administrator/AppData/Local/Programs/Python/Python312/python.exe"
+PYTHON = sys.executable
 PROXY_HOST = "127.0.0.1"
 PROXY_PORT = 7892
 

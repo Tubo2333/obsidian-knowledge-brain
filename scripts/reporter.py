@@ -454,8 +454,13 @@ def rebuild_maps(vault):
             title_match = re.search(r'^#\s+(.+)', body, re.MULTILINE)
             title = title_match.group(1).strip() if title_match else fm.get('ai_title', 'Untitled')
 
+            # Normalize date: YAML safe_load may parse "2026-06-14" as datetime.date
+            date_val = fm.get('date', 'unknown')
+            if hasattr(date_val, 'isoformat'):
+                date_val = date_val.isoformat()
+
             sessions.append({
-                'date': fm.get('date', 'unknown'),
+                'date': date_val,
                 'project': proj,
                 'session_id': fm.get('session_id', ''),
                 'filename': f.replace('.md', ''),
@@ -628,12 +633,8 @@ def rebuild_maps(vault):
                     topics.add(TOPIC_MAP[tag][0].split(' / ')[0])
             ts = ' #'.join([''] + sorted(topics)[:3]) if topics else ' -'
             d = s['date']
-            if hasattr(d, 'isoformat'):
-                # datetime.date from YAML parsing
-                ds = d.isoformat()[5:]  # "2026-06-11" -> "06-11"
-                d = d.isoformat()
-            elif isinstance(d, str) and len(d) >= 10:
-                ds = d[5:]
+            if isinstance(d, str) and len(d) >= 10:
+                ds = d[5:]  # "2026-06-11" -> "06-11"
             else:
                 ds = str(d)
             tl.append(f'| {proj} | [[sessions/{s["filename"]}\\|{short}]] |{ts} ({ds}) |')

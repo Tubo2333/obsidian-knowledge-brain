@@ -5,9 +5,28 @@ Before creating a new rule, check if existing rules already cover it.
 When rules overlap, suggest merging — don't pile up.
 """
 import os
+import re
+import json
 import yaml
 import shutil
+from pathlib import Path
 from datetime import datetime, timedelta
+
+
+def _get_project_root():
+    """Detect project root from script location or CWD."""
+    sd = Path(__file__).resolve().parent
+    c = sd.parent.parent
+    if (c / "CLAUDE.md").exists() and (c / ".claude").exists():
+        return str(c)
+    cwd = Path.cwd().resolve()
+    for p in [cwd] + list(cwd.parents):
+        if (p / "CLAUDE.md").exists() and (p / ".claude").exists():
+            return str(p)
+    return str(cwd)
+
+_DEFAULT_ROOT = _get_project_root()
+_DEFAULT_CLAUDE_MD = os.path.join(_DEFAULT_ROOT, "CLAUDE.md")
 
 def run(cfg, dry_run=False, step_results=None):
     vault = cfg['vault_path']
@@ -378,3 +397,274 @@ def backup_pre_modification(vault, filepath):
     dst = os.path.join(rollback_dir, rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(filepath, dst)
+
+
+# ═══════ Health Check mode (design spec §8.2) ═══════
+
+def count_lines(filepath):
+    with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+        return len(f.readlines())
+
+
+def parse_frontmatter(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        parts = content.split('---', 2)
+        if len(parts) < 3: return None
+        fm = yaml.safe_load(parts[1])
+        return fm if isinstance(fm, dict) else None
+    except (yaml.YAMLError, Exception):
+        return None
+
+
+def _norm(raw):
+    """Normalize a directive to a comparable key (lowercase, no stopwords)."""
+    stop = {'the','a','an','is','are','was','were','be','been','in','on','at',
+            'to','for','of','with','from','by','and','or','not','that','this',
+            'it','its','s','all','any','when','where','which','who','whom'}
+    c = re.sub(r'`[^`]+`', 'CODE', raw)
+    c = re.sub(r'[^\w\s]', ' ', c)
+    terms = [w for w in re.sub(r'\s+',' ',c).strip().lower().split() if w not in stop]
+    return ' '.join(terms) if len(terms) >= 2 else ''
+
+
+def check_contradictions(rules_dir):
+    """Return [(filepath, detail)] for MUST vs NEVER conflicts across rules."""
+    if not os.path.isdir(rules_dir): return []
+    must, never = {}, {}
+    for f in sorted(os.listdir(rules_dir)):
+        if not f.endswith('.md') or f.startswith('_'): continue
+        fp = os.path.join(rules_dir, f)
+        try:
+            with open(fp, 'r', encoding='utf-8', errors='replace') as fh:
+                text = fh.read()
+        except Exception: continue
+        for m in re.finditer(r'\*\*MUST\*\*\s+(.+?)(?:\.|\n|$)', text):
+            k = _norm(m.group(1).strip())
+            if k: must.setdefault(k, []).append(f)
+        for m in re.finditer(r'\*\*NEVER\*\*\s+(.+?)(?:\.|\n|$)', text):
+            k = _norm(m.group(1).strip())
+            if k: never.setdefault(k, []).append(f)
+        for m in re.finditer(r'\*\*DO\s+NOT\*\*\s+(.+?)(?:\.|\n|$)', text):
+            k = _norm(m.group(1).strip())
+            if k: never.setdefault(k, []).append(f)
+    out = []
+    for k in must:
+        if k in never and set(must[k]) != set(never[k]):
+            out.append((os.path.join(rules_dir, must[k][0]),
+                f"contradiction: MUST vs NEVER re '{k}' — MUST:{must[k]} NEVER:{never[k]}"))
+    return out
+
+
+def regenerate_keyword_index(rules_dir, output_path):
+    """Generate _keyword_index.json. Returns keyword count."""
+    if not os.path.isdir(rules_dir): return 0
+    def _clean(kw):
+        kw = kw.strip().lower().strip('\'"`-')
+        if len(kw) < 3 or len(kw) > 60: return None
+        if '\n' in kw: return None
+        if kw[0] not in 'abcdefghijklmnopqrstuvwxyz0123456789': return None
+        if any(c in kw for c in '"<>[]'): return None
+        return kw
+
+    idx = {}
+    for f in sorted(os.listdir(rules_dir)):
+        if not f.endswith('.md') or f.startswith('_'): continue
+        fp = os.path.join(rules_dir, f)
+        ref = f"rules/{f}"
+        try:
+            with open(fp, 'r', encoding='utf-8', errors='replace') as fh:
+                text = fh.read()
+        except Exception: continue
+        fm = parse_frontmatter(fp)
+        if fm and fm.get('domain'):
+            for p in re.split(r'[-_]', str(fm['domain'])):
+                kw = _clean(p)
+                if kw: idx.setdefault(kw, []).append(ref)
+        for m in re.finditer(r'^##\s+(.+)$', text, re.MULTILINE):
+            for kw in re.split(r'[,/&]', m.group(1).strip().lower()):
+                kw = re.sub(r'[^\w-]', '', kw)
+                kw = _clean(kw)
+                if kw: idx.setdefault(kw, []).append(ref)
+        for m in re.finditer(r'`([^`\n]+)`', text):
+            kw = _clean(m.group(1))
+            if kw: idx.setdefault(kw, []).append(ref)
+        for m in re.finditer(r'\*\*(MUST|NEVER|DO)\*\*\s+(.+?)(?:\.|\n|$)', text):
+            words = re.sub(r'[^\w\s]', ' ', m.group(2).strip()[:60]).split()
+            if len(words) >= 2:
+                kw = _clean(' '.join(words[:3]))
+                if kw: idx.setdefault(kw, []).append(ref)
+    for kw in idx:
+        seen, uniq = set(), []
+        for r in idx[kw]:
+            if r not in seen: seen.add(r); uniq.append(r)
+        idx[kw] = uniq
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path + '.tmp', 'w', encoding='utf-8') as f:
+        json.dump(idx, f, indent=2, ensure_ascii=False, sort_keys=True)
+    os.replace(output_path + '.tmp', output_path)
+    return len(idx)
+
+
+def find_orphans(root_claude_md, rules_dir, projects_dir):
+    """Return list of files in rules/ or projects/ not in root index."""
+    orphans = []
+    if not os.path.isfile(root_claude_md): return orphans
+    try:
+        with open(root_claude_md, 'r', encoding='utf-8', errors='replace') as f:
+            root_text = f.read()
+    except Exception: return orphans
+    for d in [rules_dir, projects_dir]:
+        if not os.path.isdir(d): continue
+        for f in os.listdir(d):
+            if f.endswith('.md') and not f.startswith('_') and f not in root_text:
+                orphans.append(os.path.join(d, f))
+    return orphans
+
+
+def health_check(cfg):
+    """Run 9 health checks per design spec §8.2. Returns {violations, notes, fail_count, note_count}."""
+    root = os.path.dirname(cfg.get('claude_md_path', _DEFAULT_CLAUDE_MD))
+    rules_dir = os.path.join(root, '.claude', 'rules')
+    projects_dir = os.path.join(root, '.claude', 'projects')
+    scripts_dir = os.path.join(root, '.claude', 'scripts')
+    root_md = os.path.join(root, 'CLAUDE.md')
+    marker = os.path.join(root, '.claude', '.session_active')
+    violations, notes = [], []
+    today = datetime.now()
+
+    # Check 1 & 2: Hard ceiling + soft guideline
+    limits = [
+        (rules_dir, '.md', 80, 60, 'rule'),
+        (projects_dir, '.md', 60, 40, 'project'),
+        (scripts_dir, '.py', 700, 700, 'script'),
+    ]
+    for d, ext, ceil, guide, label in limits:
+        if not os.path.isdir(d): continue
+        for f in sorted(os.listdir(d)):
+            if f.endswith(ext) and not f.startswith('_'):
+                fp = os.path.join(d, f)
+                n = count_lines(fp)
+                nf = fp.replace('\\', '/')
+                if n > ceil:
+                    violations.append((nf, f"{label}:{f} exceeds hard ceiling ({n}/{ceil} lines)", "HIGH"))
+                elif n > guide:
+                    notes.append((nf, f"{label}:{f} over guideline ({n}/{guide} lines)", "LOW"))
+    if os.path.isfile(root_md):
+        n = count_lines(root_md)
+        nf = root_md.replace('\\', '/')
+        if n > 100: violations.append((nf, f"root:CLAUDE.md exceeds hard ceiling ({n}/100 lines)", "HIGH"))
+        elif n > 80: notes.append((nf, f"root:CLAUDE.md over guideline ({n}/80 lines)", "LOW"))
+
+    # Check 3: Frontmatter completeness
+    r_req = {'schema_version','domain','priority','last_triggered','status'}
+    p_req = {'schema_version','project','status','updated'}
+    for d, req in [(rules_dir, r_req), (projects_dir, p_req)]:
+        if not os.path.isdir(d): continue
+        for f in sorted(os.listdir(d)):
+            if not f.endswith('.md') or f.startswith('_'): continue
+            fp = os.path.join(d, f)
+            fm = parse_frontmatter(fp)
+            if fm is None:
+                violations.append((fp.replace('\\', '/'), f"missing/invalid YAML frontmatter", "HIGH"))
+                continue
+            missing = req - set(fm.keys())
+            if missing:
+                violations.append((fp.replace('\\', '/'), f"missing frontmatter: {sorted(missing)}", "MEDIUM"))
+
+    # Check 4: Inactive rule detection
+    if os.path.isdir(rules_dir):
+        for f in sorted(os.listdir(rules_dir)):
+            if not f.endswith('.md') or f.startswith('_'): continue
+            fp = os.path.join(rules_dir, f)
+            fm = parse_frontmatter(fp)
+            if not fm: continue
+            pri = fm.get('priority')
+            lt = fm.get('last_triggered')
+            if pri is None or not lt: continue
+            try:
+                lt_date = lt if isinstance(lt, datetime) else datetime.fromisoformat(str(lt).strip())
+                days = (today - lt_date).days
+                if isinstance(pri, (int, float)):
+                    if 1 <= pri <= 5 and days > 180:
+                        violations.append((fp.replace('\\', '/'),
+                            f"operation rule (pri={int(pri)}) inactive {days}d (threshold 180d)", "MEDIUM"))
+                    elif 6 <= pri <= 10 and days > 365:
+                        violations.append((fp.replace('\\', '/'),
+                            f"domain rule (pri={int(pri)}) inactive {days}d (threshold 365d)", "LOW"))
+            except (ValueError, TypeError):
+                notes.append((fp.replace('\\', '/'), f"unparseable last_triggered: {lt}", "LOW"))
+
+    # Check 5: Contradiction scan
+    for fp, detail in check_contradictions(rules_dir):
+        violations.append((fp.replace('\\', '/'), detail, "MEDIUM"))
+
+    # Check 6: Keyword index
+    kip = os.path.join(rules_dir, '_keyword_index.json')
+    kc = regenerate_keyword_index(rules_dir, kip)
+    notes.append(("keyword-index", f"regenerated {kc} keywords → {kip.replace('\\', '/')}", "LOW"))
+
+    # Check 7: Orphan detection
+    for fp in find_orphans(root_md, rules_dir, projects_dir):
+        violations.append((fp.replace('\\', '/'), "not in root CLAUDE.md index (orphan)", "MEDIUM"))
+
+    # Check 8: Stale session marker
+    if os.path.isfile(marker):
+        try:
+            mt = datetime.fromtimestamp(os.path.getmtime(marker))
+            hrs = (today - mt).total_seconds() / 3600
+            if hrs > 24:
+                violations.append((marker.replace('\\', '/'),
+                    f"stale session marker ({hrs:.0f}h, thresh 24h) — possible crash", "MEDIUM"))
+        except OSError: pass
+
+    return {'violations': violations, 'notes': notes,
+            'fail_count': len(violations), 'note_count': len(notes)}
+
+
+def generate_health_report(result, cfg):
+    """Write HEALTH_REPORT.md (≤30 lines). Returns path."""
+    root = os.path.dirname(cfg.get('claude_md_path', _DEFAULT_CLAUDE_MD))
+    rp = os.path.join(root, '.claude', 'HEALTH_REPORT.md')
+    v = result['violations']
+    n = result['notes']
+    hi = sum(1 for _, _, s in v if s == 'HIGH')
+    md = sum(1 for _, _, s in v if s == 'MEDIUM')
+    lo = sum(1 for _, _, s in v if s == 'LOW')
+    lines = [f"# Health Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+             f"**Summary**: {result['fail_count']} violation(s) [{hi} HIGH, {md} MEDIUM, {lo} LOW]; {result['note_count']} info note(s)", ""]
+    if v:
+        lines.append("## Violations")
+        for fp, desc, sev in v: lines.append(f"- `{fp}` — {desc}  [{sev}]")
+        lines.append("")
+    if n:
+        lines.append("## Info")
+        for fp, desc, _ in n: lines.append(f"- `{fp}` — {desc}")
+        lines.append("")
+    if len(lines) > 30: lines = lines[:29] + [f"... (truncated)"]
+    content = '\n'.join(lines).strip() + '\n'
+    os.makedirs(os.path.dirname(rp), exist_ok=True)
+    with open(rp + '.tmp', 'w', encoding='utf-8') as f: f.write(content)
+    os.replace(rp + '.tmp', rp)
+    return rp
+
+
+if __name__ == '__main__':
+    import sys
+    if '--health-check' in sys.argv:
+        try:
+            from config import load_config
+            cfg = load_config()
+        except Exception:
+            cfg = {'claude_md_path': _DEFAULT_CLAUDE_MD}
+        result = health_check(cfg)
+        rp = generate_health_report(result, cfg)
+        print(f"Health report: {rp}")
+        print(f"  Violations: {result['fail_count']}  |  Info notes: {result['note_count']}")
+        for fp, desc, sev in result['violations']:
+            print(f"    [{sev}] {desc}")
+        sys.exit(0 if result['fail_count'] == 0 else 1)
+    else:
+        print("Usage: python maintainer.py --health-check")
+        sys.exit(1)
