@@ -268,8 +268,9 @@ def heuristic_root_cause_analysis(patterns, taxonomy):
 
 
 def rule_exists(rule_id):
-    """Check if a rule already exists in the vault."""
-    path = os.path.join("D:/Obsidian/a", '00-Rules', f"{rule_id}.md")
+    """Check if a rule already exists in the vault (v3.0: env-var fallback)."""
+    vault = os.environ.get("OBSIDIAN_VAULT_PATH", os.path.expanduser("~/Obsidian/a"))
+    path = os.path.join(vault, '00-Rules', f"{rule_id}.md")
     return os.path.exists(path)
 
 

@@ -1,4 +1,4 @@
-# memory-brain v3.0
+# obsidian-knowledge-brain v3.0
 
 An AI agent skill that remembers every technical decision and bug fix across sessions — and learns from them. Zero dependencies, no external vault, works on Claude Code, Cursor, Gemini CLI, and Codex.
 

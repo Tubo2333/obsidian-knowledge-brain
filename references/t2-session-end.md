@@ -62,5 +62,5 @@ Check `rules/*.md` ≤80 lines, `projects/*.md` ≤60, root `CLAUDE.md` ≤100. 
 
 ## Platform Notes / 平台说明
 (All paths relative to `$PROJECT_ROOT/.claude/` unless qualified.)
-- **Claude Code**: `Stop` hook → `session_close.py --prompt` (Agent answers 5-step Phase 1) → `session_harvester.py` supplements Phase 2 deferred audit (legacy v2.0 script, writes to Obsidian vault)
+- **Claude Code**: `Stop` hook → `session_close.py --prompt` (Agent answers 5-step Phase 1) → `session_harvester.py` supplements with automated transcript harvesting and session data extraction
 - **No-hook**: F2 user口令 → next T1 verifies via F4 recovery check. If platform has no transcript, Agent relies on conversation memory — less reliable but better than nothing.
