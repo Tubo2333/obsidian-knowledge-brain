@@ -1,6 +1,6 @@
 # Obsidian Knowledge Brain v3.0 / Obsidian 知识大脑 v3.0
 
-**Schema**: 3.0 | **Lines**: ≤200 | **Load**: Always (if skill active)
+**Schema**: 4.0 | **Lines**: ≤200 | **Load**: Always (if skill active)
 **Platforms**: **Claude Code** — full auto (hooks + cron). **Cursor / Gemini CLI / Codex** — manual trigger (type "收尾" to save, "诊断" to bootstrap). Requires an AI Agent with file read/write. Not designed for plain-terminal or Agent-free use. / CC 全自动，其他平台需手动输入口令触发。
 
 **Upgrade from v2.0**: zero vault dependency (无 vault 依赖), project-local `.claude/` storage. Obsidian is now optional — open your project folder as a vault for knowledge graph visualization. / Obsidian 现为可选——将项目文件夹作为 vault 打开即可获得知识图谱可视化。
@@ -11,9 +11,15 @@
 
 → **First time?** See `references/quickstart.md` (5-minute walkthrough / 5分钟上手).
 
-## 0. Critical Rule / 关键规则 (Priority 0)
+## 0. Critical Rules / 关键规则 (Priority 0)
 
-**At session end, extract knowledge. / 会话结束时提取知识。** Do NOT interrupt your work to write annotations mid-session — that breaks your flow. Work normally. At session end (T2 "收尾"), review the session transcript and extract ALL technical decisions and resolved errors into `[DECISION:]` / `[ERROR:]` format. This is a memory system — it learns from completed experiences, not live interruptions. / 这是记忆系统——它从已完成的经验中学习，不是从进行中的打断中学习。
+**v4.0 dual rule / 双规则**:
+
+1. **[ERROR:] stubs — IMMEDIATE after fix / 修复后立即记录。** After resolving ANY error, BEFORE writing the permanent fix, append a one-line stub to `memory/_phase1_inbox.md`:
+   `[ERROR: type=<from-taxonomy> | resolution=<fix> | project: <slug>]`
+   This is the FINAL step of every error fix. NOT deferred to session end. Skipping this and hitting the same error again → `[ERROR: type=missed-record | error_type=<type>]`.
+
+2. **[DECISION:] annotations — session end only / 仅会话结束时。** Do NOT interrupt work to annotate decisions mid-session. Work normally. At session end (T2 "收尾"), extract ALL technical decisions from the session transcript into `[DECISION:]` format. This is a memory system — it learns from completed experiences, not live interruptions.
 
 Format: `[DECISION: <summary> | context: <why> | project: <slug> | scope: project|cross-project]` and `[ERROR: type=<from-taxonomy> | resolution=<fix> | project: <slug>]`. Missing required fields → mark `# MVA_FAIL:<field>` and leave in inbox.
 
@@ -25,17 +31,13 @@ Format: `[DECISION: <summary> | context: <why> | project: <slug> | scope: projec
 
 **Obsidian?** Not required. v3.0 stores knowledge as plain `.md` in `.claude/`. Open your project folder as an Obsidian vault to browse the knowledge graph — purely optional. v2.0 users: old vault data preserved in `archive/`, `.claude/memory/` is the new home. / 非必需。v3.0 用纯 `.md` 存储，用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
 
-## 0b. Execution Model / 执行模型
+## 0b. Sandbox Boundary / 沙箱边界
 
-This skill needs **file read + write permissions** in your project. It will: scan your directory structure (read), create `.claude/` skeleton files (write), and optionally move old files to `archive/` (write). **Nothing outside `<project>/.claude/` and `<project>/archive/` is ever modified.** / 此 Skill 需要项目内的文件读写权限。仅触碰 `.claude/` 和 `archive/`，绝不修改项目其他文件。
+**Project scope / 项目范围**: This skill reads and writes within `<project>/{AGENT_DIR}/` and `<project>/archive/`. No other project directories are modified. / 仅触碰项目内的 Agent 目录和 archive/。
 
-**Phase A is TWO-PASS / 两遍执行**:
-1. **Diagnose & Plan (READ-ONLY / 只读)**: Agent scans your project, calculates chaos score, produces a plan: "I will create N files, move M files to archive/. Proceed?" No writes happen yet. Use T4 command `"诊断" / "diagnose"` to run only this pass.
-2. **Execute (WRITE / 写入)**: After you approve the plan, Agent creates the skeleton, migrates files, validates. Use T4 `"整理项目" / "bootstrap"` for full execution.
+**Global store / 全局存储 (v4.0)**: `~/.obsidian-knowledge-brain/` — a single, well-known directory outside the project. Contains `atoms.json` (global atom pointer table, ≤20 active atoms), `atoms.json.bak` (write-backup), and `atoms.json.lock` (concurrent write guard). Written ONLY during install/uninstall/promotion. During normal Agent sessions, atoms.json receives ONLY `last_triggered` timestamp updates when atoms are matched (metadata, not knowledge modification). All other writes are promotion-only. Read during Pre-action sync. No other paths outside the project are touched. / 全局存储目录，仅在安装/卸载/晋升时写入，正常会话只更新 last_triggered 时间戳。
 
-**Interrupted? / 中断了？** If Phase A is interrupted (permission denied, session ended), re-run `"整理项目" / "bootstrap"`. Agent reads `PHASE_A_COMPLETE` marker state and resumes from where it left off. Files already created are skipped (idempotent). / 中断后重新运行即可，已创建的文件自动跳过。
-
-**First run in a project?** Run `"诊断" / "diagnose"` first to see what Phase A will do before approving any writes. / 新项目先跑 `"诊断"` 看计划，再跑 `"整理项目"` 执行。
+**Uninstall / 卸载**: `--uninstall` flag creates `.uninstalled` marker → Pre-action instruction removed from always-loaded file → `_global_atoms` removed from keyword index → atoms.json preserved (user may reinstall). / 卸载时保留 atoms.json 以备重新安装。
 
 ## 1. Phase Detection / 相位检测 (Execute FIRST)
 
@@ -128,6 +130,9 @@ If your platform has no hooks or no Agent: T1 via manually reading SKILL.md §0.
 
 ### English-only users / 纯英语用户
 All labels and headings are bilingual (Chinese + English). If you read only English, the `/ 中文` suffix is a term annotation — you can ignore it. The body text is English-primary. See §8 for term translations if curious. / 所有标签中英双语，纯英语读者可忽略 `/ 中文` 后缀，正文以英语为主。
+
+### v4.0 Global Atom Table / 全局原子表
+The global atom table lives at `~/.obsidian-knowledge-brain/atoms.json`. It is created automatically by `install.py` or Phase A bootstrap. Cross-project knowledge is promoted here when the same error occurs in ≥2 independent projects. See `references/t2-session-end.md` §②b for promotion protocol. / 全局原子表位于 `~/.obsidian-knowledge-brain/atoms.json`，同一错误在 ≥2 个独立项目中复现时晋升到此。
 
 ## 8. FAQ / 常见问题
 
