@@ -56,3 +56,9 @@ After ~20 annotations across ~3 sessions, the skill enters **active mode** and s
 | "健康检查" / "health check" | Full project health scan |
 | "Skill 状态" / "skill status" | Show what the skill knows so far |
 → All 10 commands: SKILL.md §3 T4 | Deep dive: `references/t1-session-start.md` to `t3-periodic-check.md`
+
+## v4.0: Cross-Project Knowledge / 跨项目知识
+
+v4.0 adds a global atom table at `~/.obsidian-knowledge-brain/atoms.json`. When the same error occurs in >=2 independent projects, the Agent will offer to promote it to global knowledge. Once promoted, every project's pre-action check sees it — prevention, not just memory. / v4.0 增加全局原子表。同一错误在 >=2 个独立项目中复现时，Agent 会提议晋升为全局知识。晋升后所有项目都能在动手前看到警告。
+
+The four trigger words are the same. What changes is what happens after "收尾" — the Agent now checks for cross-project patterns and offers promotion. / 四个触发词不变。"收尾"之后 Agent 会检查跨项目模式并提议晋升。

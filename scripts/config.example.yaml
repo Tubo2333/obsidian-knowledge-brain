@@ -1,57 +1,24 @@
-# Obsidian Knowledge Brain v2.0 — Configuration
-# ===============================================
+# Obsidian Knowledge Brain v4.0 — Configuration Example
+# ======================================================
 # Copy this file to config.yaml and fill in your paths.
 # config.yaml is git-ignored and never committed.
+# v4.0 uses stdlib only — no PyYAML needed for core operations.
 
-version: "2.0"
+version: "4.0"
 
-# --- REQUIRED PATHS ---
+# --- GLOBAL ATOM TABLE ---
+# Default location: ~/.obsidian-knowledge-brain/atoms.json
+# Override for testing or custom setups:
+# atoms_path: ""
 
-# Path to your Obsidian vault (created by setup.py if it doesn't exist)
-vault_path: ""
+# --- AGENT DIRECTORY ---
+# Auto-detected from .claude/, .cursor/, .gemini/, .codex/
+# Override if auto-detection fails:
+# agent_dir: ".claude"
 
-# Path to Claude projects directory where session JSONL files live
-claude_project_path: ""
-
-# Path to Python 3 interpreter
-python_path: "python"
-
-# --- OPTIONAL PATHS ---
-
-# Path to CLAUDE.md for compiler step
-claude_md_path: ""
-
-# Nutstore/backup sync path (optional — for backup.py cloud sync)
-backup_path: ""
-
-# --- API CONFIGURATION (for LLM deep analysis in analyzer.py) ---
-
-api:
-  # Path to Claude settings.json (contains API key in env block)
-  settings_json: ""
-
-  # API key override (null = auto-read from settings.json env.ANTHROPIC_AUTH_TOKEN)
-  key: null
-
-  # API endpoint base URL (null = auto-detect from settings.json)
-  base_url: null
-
-  # Model name for deep analysis (null = auto-detect from settings.json)
-  model: null
-
-  temperature: 0.3
-  max_tokens: 4000
-  max_retries: 3
-  retry_backoff_sec: [2, 4, 8]
-
-# --- SCANNER SCHEDULE (informational — actual scheduling via Claude Code cron) ---
-
-scan:
-  day: SUN
-  hour: 15
-  minute: 0
-
-# --- LOGGING ---
-
-log_level: INFO
-log_dir: ""    # auto-derived from vault_path/04-Feedback/_logs if empty
+# --- OPTIONAL: LLM analysis (Tier 2, off by default) ---
+# api:
+#   base_url: ""
+#   model: ""
+#   temperature: 0.3
+#   max_tokens: 4000

@@ -1,4 +1,4 @@
-# Root Cause KB / 根因知识库 v3.0
+# Root Cause KB / 根因知识库 v4.0
 
 Seed lookup for Tier 1 heuristic matching. Symptom keywords → `root_cause_id` (根因ID).
 

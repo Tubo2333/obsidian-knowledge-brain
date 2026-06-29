@@ -1,4 +1,4 @@
-# Error Taxonomy v3.0 / 错误分类法 v3.0
+# Error Taxonomy v4.0 / 错误分类法 v4.0
 
 Seed vocabulary for `[ERROR: type=<value>]` annotations. Agent MUST use values from this taxonomy. Unmatched errors use `type=NEW:<proposed_type>` (新错误类型提案 / new error type proposal).
 
@@ -43,4 +43,5 @@ Catch-all (兜底分类). ≥3 occurrences of same NEW type → propose new subc
 4. Human confirms; this file is updated as authoritative seed. Cross-project extensions flow back to skill-package seed via Skill update (§5.5).
 
 ## Version History / 版本历史
+- v4.0 (2026-06-29): Added missed-knowledge category (missed-atom, missed-record).
 - v3.0 seed (2026-06-21): Inherited 46 subcategories from v2.0 11-category taxonomy, consolidated into 8 cross-project categories per App C. Added Agent-Behavior category. Registered 5 additional types from v3.0 design-phase pitfall files (`data-provenance`, `llm-api-config`, `concurrency-design`, `metric-undefined`, `design-contradiction`). Dropped 10 v2.0 subcategories as intentionally platform/project-specific (not cross-project general): obsidian (plugin_conflict, vault_corrupt, sync_fail), git-internal (merge_conflict, detached_head, submodule_issue, large_file_push_fail), nodejs toolchain (puppeteer_render_fail, npm_install_fail), shell (git_hook_fail). All dropped types can be reintroduced via `NEW:` extension protocol if encountered in new projects.

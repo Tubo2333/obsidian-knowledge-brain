@@ -65,3 +65,26 @@ After bootstrap, you should see:
 - `archive/.claude-archive/README.md` — recovery instructions
 
 Run `"Skill 状态"` for a live status summary.
+
+## v4.0: Global Atom Table / 全局原子表问题
+
+### "Pre-action instruction missing from CLAUDE.md" / "预行动指令丢失"
+1. Check `~/.obsidian-knowledge-brain/.uninstalled` — if it exists, delete it and re-run `python scripts/install.py`
+2. If `.uninstalled` doesn't exist, re-run `python scripts/install.py` — injection is idempotent
+3. Verify with: `grep "Knowledge triggers" CLAUDE.md` — should return exactly 1 match
+
+### "atoms.json corrupted" / "atoms.json 损坏"
+1. Check `~/.obsidian-knowledge-brain/atoms.json.bak` — if valid, it auto-recovers on next read
+2. If both are corrupt, atoms.json is rebuilt from any project's `_global_atoms` section (metadata loss — see SKILL.md section 0c L9)
+3. To force rebuild: delete both atoms.json and atoms.json.bak, then re-run install.py
+
+### "Promotion never happens" / "晋升从不触发"
+1. Promotion requires: same `root_cause_id` in >=2 independent projects
+2. T2 "收尾" checks for this — make sure you say "收尾" at session end
+3. Promotion is human-confirmed — the Agent asks `[y/N]`, you must respond "y"
+4. Check `~/.obsidian-knowledge-brain/atoms.json` to see current active atoms
+
+### "Pre-action triggers not firing" / "预行动触发器不工作"
+1. Pre-action is a MUST instruction in the always-loaded file — it relies on Agent compliance, not mechanical enforcement
+2. On non-Claude-Code platforms: verify the always-loaded file is actually loaded by your platform
+3. If the keyword index doesn't exist (project not bootstrapped), Pre section is gracefully skipped

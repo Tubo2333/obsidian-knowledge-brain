@@ -121,7 +121,7 @@ Token usage: approximately 3,000-8,000 tokens per session for annotation and cla
 
 ## Obsidian Integration (Optional) / Obsidian 集成（可选）
 
-v3.0 stores knowledge as plain `.md` files in `.claude/memory/`. To browse as a knowledge graph: / v3.0 用纯 `.md` 存储知识，要用 Obsidian 浏览知识图谱：
+v4.0 stores knowledge as plain `.md` files in your agent directory. To browse as a knowledge graph: / v4.0 用纯 `.md` 存储知识，要用 Obsidian 浏览知识图谱：
 
 1. Open your project folder as an Obsidian vault / 用 Obsidian 打开项目文件夹
 2. The `.claude/` directory becomes a browsable wiki / `.claude/` 目录变成可浏览的 wiki
@@ -155,13 +155,13 @@ obsidian-knowledge-brain/
 │   ├── t1-session-start.md     ← Session start 5-step protocol / 会话启动协议
 │   ├── t2-session-end.md       ← Session end close protocol / 会话结束协议
 │   └── t3-periodic-check.md    ← Weekly health check 7-dim scan / 定期健康检查
-└── scripts/                    ← 17 Python scripts (v3.0 hook scripts + v2 utilities)
+└── scripts/                    ← 20 Python scripts (v4.0 core + v3.0 hooks + v2 utilities)
 	    ├── global_atoms.py          ← NEW v4.0: atom table CRUD + promotion/demotion
 	    ├── keyword_index.py         ← NEW v4.0: safe merge sync + .bak protection
 	    ├── pre_action.py            ← NEW v4.0: format detect + instruction injection
 	    ├── install.py               ← REWRITTEN v4.0: 9-step idempotent installer
-	    ├── session_start.py        ← T1 hook: SessionStart briefing / 会话启动简报 (NEW v3.0)
-	    ├── session_close.py        ← T2 hook: session-end prompt + validator / 收尾协议+验证 (NEW v3.0)
+	    ├── session_start.py        ← T1 hook: SessionStart briefing / 会话启动简报
+	    ├── session_close.py        ← T2 hook: session-end prompt + validator / 收尾协议+验证
 	    ├── session_harvester.py    ← Hook transcript harvester / 会话转录收割器
 	    ├── runner.py               ← Pipeline orchestrator (5-step) / 管道编排器
 	    ├── analyzer.py             ← Root-cause analysis (keyword + LLM) / 根因分析
@@ -183,7 +183,7 @@ obsidian-knowledge-brain/
 ## FAQ / 常见问题
 
 **Q: Does this need Obsidian? / 需要 Obsidian 吗？**
-A: No. v3.0 stores everything in `.claude/` inside your project. Obsidian is an optional viewer. / 不需要。v3.0 数据全在项目 `.claude/` 里，Obsidian 只是可选查看器。
+A: No. v4.0 stores everything in your agent directory. Obsidian is an optional viewer. / 不需要。v4.0 数据全在项目 agent 目录里，Obsidian 只是可选查看器。
 
 **Q: Does it work without Claude Code? / 不用 Claude Code 能用吗？**
 A: Yes — Cursor, Gemini CLI, and Codex all work via manual trigger words. See `references/platform-guide.md`. / 能——输触发词手动执行即可。
