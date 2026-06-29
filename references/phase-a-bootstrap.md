@@ -44,7 +44,38 @@ Create from skill-package templates (`<skill-root>/templates/`):
 - `.claude/memory/` (`pitfalls/` `decisions/` `preferences/` `reference/` + `_phase1_inbox.md`; later: `pitfall.template.md` `decision.template.md`)
 - `archive/.claude-archive/` + README.md (explain recovery)
 
-## 5. Validate / 验证
+## 5. Global Setup / 全局设置 (v4.0)
+
+**NEW v4.0** — equivalent to install.py steps 2-8:
+
+### 5a. Platform Detection / 平台检测
+Identify: CC | Cursor | Gemini CLI | Codex → look up always-loaded file from `references/platform-guide.md`.
+
+### 5b. Dual-Platform Check / 双平台检测
+Check for multiple agent directories (`.claude/` + `.cursor/` + ...). If found → warn: "多平台目录检测到。当前目标: <X>。建议选主平台。"
+
+### 5c. Global Directory Setup / 全局目录设置
+Create `~/.obsidian-knowledge-brain/` if not exists. Initialize `atoms.json` with empty skeleton:
+```json
+{"meta": {"version": "4.0", "max_atoms": 20, "promotion_threshold": 2, "created": "<YYYY-MM-DD>", "last_promotion": null}, "atoms": []}
+```
+If atoms.json exists + valid → skip. If exists + invalid → error, don't overwrite.
+
+### 5d. Pre-Action Injection / 预行动指令注入
+Check `~/.obsidian-knowledge-brain/.uninstalled` → exists → skip.
+Detect always-loaded file format (first 20 lines): `# heading` → Markdown, `---` → YAML, `//` → JS/TS, `<!--` → HTML, `{` → JSON, none → plain.
+Inject `Knowledge triggers（强制 / MUST）` instruction at file top (format-adaptive).
+If already present → skip.
+
+### 5e. Keyword Index Upgrade / 关键词索引升级
+`_keyword_index.json` exists → add `_global_atoms: []` if missing. Doesn't exist → create with `_global_atoms` section.
+
+### 5f. Validate Global Setup / 验证全局设置
+- atoms.json valid JSON + schema
+- Pre-action present in always-loaded file (or .uninstalled)
+- _keyword_index.json has _global_atoms section
+
+## 6. Validate / 验证
 
 6-item checklist (Agent manual, no script dependency):
 1. ✅ CLAUDE.md ≤ 100 lines
@@ -54,7 +85,7 @@ Create from skill-package templates (`<skill-root>/templates/`):
 5. ✅ `archive/` contains complete copy of originals
 6. ✅ Legacy automation audit complete, write-target matrix populated
 
-All PASS → create `.claude/PHASE_A_COMPLETE` marker with YAML frontmatter fields: `phase: A, status: complete, bootstrap_date: <YYYY-MM-DD>, chaos_score: <0-12>, audit_type: <full|reduced>, validated_by: Agent, schema_version: "3.0"`. Body: `## Validation Results` with per-item PASS/FAIL for all 6 checklist items.
+All PASS → create `.claude/PHASE_A_COMPLETE` marker with YAML frontmatter fields: `phase: A, status: complete, bootstrap_date: <YYYY-MM-DD>, chaos_score: <0-12>, audit_type: <full|reduced>, validated_by: Agent, schema_version: "4.0"`. Body: `## Validation Results` with per-item PASS/FAIL for all 6 checklist items.
 
 ## Idempotency / 幂等性
 Check `PHASE_A_COMPLETE` first: status=complete + ≤90 days → skip. >90 days → re-validate all 6 checklist items; all pass → refresh bootstrap_date; any fail → re-diagnose. status=in_progress → re-run all 6 checks from scratch (marker stores no per-item state). Corrupt YAML → re-diagnose. Force re-run → archive old marker first.

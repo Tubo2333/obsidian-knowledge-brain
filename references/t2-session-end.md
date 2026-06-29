@@ -28,6 +28,44 @@
 - Format: `[ERROR: type=<from-taxonomy> | resolution=<fix> | project: <slug>]`
 - **Anti-pollution (反污染)**: Only store FIXED errors. If unresolved → mark `resolution: UNRESOLVED` → leave in inbox. If `error_type + root_cause_id` matches existing pitfall → update `sessions_observed` counter only, do NOT create duplicate file.
 
+### ②b. Cross-Project Promotion Detection / 跨项目晋升检测 (v4.0)
+
+For each `[ERROR:]` annotation in this session:
+
+1. **Compute root_cause_id**:
+   - Exact match: error `type` found in `references/error-taxonomy.md` → use the same `root_cause_id` as prior occurrences
+   - Fuzzy match (type not in taxonomy): compare resolution patterns against existing errors in `memory/pitfalls/` → Agent detects same root cause → human confirms → same ID
+   - New error type → assign `root_cause_id = <error_type>` (first occurrence, project-local only)
+
+2. **Check for cross-project recurrence**:
+   - Read `~/.obsidian-knowledge-brain/atoms.json`
+   - Search for existing atom where `project_origin` contains ≥1 project NOT the current project AND the atom ID matches (same root_cause_id + type hash)
+   - Same root_cause_id under different project → **cross-project match → promotion candidate**
+
+3. **First occurrence handling**:
+   - root_cause_id NOT in any atom → store locally in current project's `memory/pitfalls/` (NOT promoted)
+   - Generate keyword entries in local `_keyword_index.json` only
+
+4. **Promotion candidate → present to user**:
+   ```
+   Error type "<type>" has now occurred in projects: [A, B].
+   This is a cross-project pitfall. Promote to global atom table?
+   [y/N]
+   ```
+
+5. **If user confirms (y)**:
+   - Generate trigger keywords (1-5) from the error's resolution field and type
+   - Extract function/library/tool names (e.g. "python-docx", "pandoc", "sva::ComBat")
+   - Agent proposes keywords → user confirms or edits
+   - Compute atom ID: `{DOMAIN}-{SHA256(root_cause_id + type)[:8]}`
+     - DOMAIN from `references/domain-registry.md` atom_prefix mapping
+   - Run promotion via `python scripts/global_atoms.py --promote` with atom data
+   - Update local `_keyword_index.json` via safe-merge sync
+
+6. **If user declines (N or timeout)**:
+   - Store as project-local pitfall in `memory/pitfalls/`
+   - Do NOT add to global atom table
+
 ### ③ Project Status / 项目状态
 Update `projects/<slug>.md` frontmatter: `updated: <today>`. If `status` enum changed → update `status` too.
 

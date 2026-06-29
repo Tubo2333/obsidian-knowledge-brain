@@ -17,9 +17,10 @@
 | 5 | **Pattern extraction (模式提取)** | Weekly (if new annotations) | ≥20 new annotations since last run → Tier 1 heuristic match against `references/root-cause-kb.md`. If `total_annotations >= 20 AND mode: active` in cold-start counter → also check Tier 2 activation gate. Unmatched annotations → Tier 3 human review queue (人工审查队列). |
 | 6 | **Index rebuild (索引重建)** | Weekly | Rebuild `_keyword_index.json` from filesystem. |
 | 7 | **Legacy automation back-pressure (遗留自动化反向压力)** | Monthly (weekly if active) | Scan CLAUDE.md for `<!-- COMPILED:RULES_START -->` blocks → flag as legacy injection. Compare COMPILED entry count vs `rules/` file count. |
+| 8 | **Atom lifecycle / 原子生命周期 (v4.0)** | Weekly | Scan `~/.obsidian-knowledge-brain/atoms.json`: (a) atoms with `last_triggered` > 365 days → set `demoted: true`, `demoted_date: <today>`. (b) atoms with `demoted: true` + `demoted_date` > 90 days → remove from atoms.json entirely (Phase 2 final removal). (c) atoms with `pointer_broken: true` → priority demotion candidates. (d) check for stale `.lock` files (>10 min) → auto-clean. (e) verify atoms.json and .bak are consistent. Report: active count, demoted count, removed count. |
 
 ## Per-Dimension Idempotency / 分维度幂等性
-Per-dimension independent timestamps in `HEALTH_REPORT.md`. Dims 1-4+6: skip if `dim_1_4_6_last_check` < 7 days. Dim 5: skip if `last_pattern_extraction` < 7 days OR no new annotations. Dim 7: skip if `dim_7_last_check` < 30 days (upgrade to weekly if active back-pressure).
+Per-dimension independent timestamps in `HEALTH_REPORT.md`. Dims 1-4+6: skip if `dim_1_4_6_last_check` < 7 days. Dims 8: skip if `dim_8_last_check` < 7 days. Dim 5: skip if `last_pattern_extraction` < 7 days OR no new annotations. Dim 7: skip if `dim_7_last_check` < 30 days (upgrade to weekly if active back-pressure).
 
 ## Tier 2 Activation Gate / Tier 2 激活门控
 All 3 conditions required (默认 OFF / default OFF):
