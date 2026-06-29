@@ -182,7 +182,9 @@ def inject(file_path: Path) -> tuple[bool, str]:
 
 
 def remove(file_path: Path) -> tuple[bool, str]:
-    """Remove pre-action instruction from file. For uninstall.
+    """Remove pre-action instruction from file. Format-adaptive.
+    Detects injection format from the SENTINEL line's prefix, then removes
+    the entire instruction block. Works for all 6 formats.
     Returns (success, message)."""
     if not file_path.exists():
         return False, "File not found"
@@ -196,30 +198,94 @@ def remove(file_path: Path) -> tuple[bool, str]:
     except (OSError, UnicodeDecodeError) as e:
         return False, f"Cannot read: {e}"
 
-    # Find and remove the block (from SENTINEL line to end of blockquote)
     lines = content.split("\n")
-    start_idx = None
-    end_idx = None
+    sentinel_idx = None
 
+    # Find the SENTINEL line
     for i, line in enumerate(lines):
         if SENTINEL in line:
-            # Go back to find the actual start of the blockquote
-            j = i
-            while j > 0 and lines[j-1].lstrip().startswith(">"):
-                j -= 1
-            start_idx = j
-            # Go forward to find end
-            while j < len(lines) and (lines[j].lstrip().startswith(">") or
-                                       (lines[j].strip() == "" and j+1 < len(lines) and lines[j+1].lstrip().startswith(">"))):
-                j += 1
-            end_idx = j
+            sentinel_idx = i
             break
 
-    if start_idx is None:
-        return False, "Sentinel found but block boundaries unclear"
+    if sentinel_idx is None:
+        return False, "Sentinel not found"
 
+    # Detect format from the SENTINEL line's prefix
+    sentinel_line = lines[sentinel_idx]
+    start_idx = sentinel_idx
+    end_idx = sentinel_idx + 1
+
+    if sentinel_line.lstrip().startswith("> "):
+        # Markdown blockquote: search backward for block start, forward for block end
+        while start_idx > 0 and lines[start_idx - 1].lstrip().startswith(">"):
+            start_idx -= 1
+        while end_idx < len(lines) and lines[end_idx].lstrip().startswith(">"):
+            end_idx += 1
+        # Consume trailing blank lines within/below the block
+        while end_idx < len(lines) and lines[end_idx].strip() == "":
+            end_idx += 1
+
+    elif sentinel_line.lstrip().startswith("// "):
+        # JavaScript // comments: find contiguous // block
+        while start_idx > 0 and lines[start_idx - 1].lstrip().startswith("// "):
+            start_idx -= 1
+        while end_idx < len(lines) and lines[end_idx].lstrip().startswith("// "):
+            end_idx += 1
+        # Consume trailing blank line
+        if end_idx < len(lines) and lines[end_idx].strip() == "":
+            end_idx += 1
+
+    elif sentinel_line.strip().startswith("<!--"):
+        # HTML comment: find <!-- ... --> block
+        # Search backward for <!--
+        while start_idx > 0 and "<!--" not in lines[start_idx - 1]:
+            start_idx -= 1
+        # Search forward for -->
+        while end_idx < len(lines) and "-->" not in lines[end_idx]:
+            end_idx += 1
+        if end_idx < len(lines):
+            end_idx += 1  # include the --> line
+        # Consume trailing blank line
+        if end_idx < len(lines) and lines[end_idx].strip() == "":
+            end_idx += 1
+
+    elif sentinel_line.strip().startswith('"_comment"') or sentinel_line.strip().startswith('"Knowledge triggers'):
+        # JSON _comment key: find the _comment line and remove it + trailing comma if present
+        for j in range(sentinel_idx, -1, -1):
+            if '"_comment"' in lines[j]:
+                start_idx = j
+                break
+        # The _comment value is a single JSON string line
+        end_idx = start_idx + 1
+
+    else:
+        # Plain text: remove the raw text block
+        # Find the start (first non-blank line of the instruction block)
+        while start_idx > 0 and PRE_ACTION_TEXT.split("\n")[0].strip() not in lines[start_idx - 1]:
+            start_idx -= 1
+            if start_idx == 0:
+                break
+        # Find the end (after the last line of PRE_ACTION_TEXT)
+        pre_lines = [l for l in PRE_ACTION_TEXT.split("\n") if l.strip()]
+        if pre_lines:
+            last_sentence = pre_lines[-1].strip().lstrip("> ").strip()
+            for j in range(sentinel_idx, len(lines)):
+                if last_sentence in lines[j]:
+                    end_idx = j + 1
+                    break
+            else:
+                end_idx = sentinel_idx + 1
+        # Consume trailing blank line
+        if end_idx < len(lines) and lines[end_idx].strip() == "":
+            end_idx += 1
+
+    # Remove the block
     new_lines = lines[:start_idx] + lines[end_idx:]
     new_content = "\n".join(new_lines)
+
+    # Clean up: remove leading blank lines if we removed from the top
+    while new_content.startswith("\n\n"):
+        new_content = new_content[1:]
 
     try:
         with open(file_path, "w", encoding="utf-8") as f:

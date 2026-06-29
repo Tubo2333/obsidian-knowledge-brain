@@ -94,9 +94,12 @@ def write_index(project_root: Path, data: dict) -> bool:
 
 
 def _rebuild_from_scan(project_root: Path) -> dict:
-    """Rebuild index from rules/ directory scan. Returns minimal valid index."""
+    """Rebuild index from rules/ AND memory/ directory scan.
+    Returns minimal valid index."""
     result = {"_global_atoms": []}
     agent_dir = _detect_agent_dir(project_root)
+
+    # Scan rules/
     rules_dir = agent_dir / "rules"
     if rules_dir.exists():
         for f in sorted(rules_dir.glob("*.md")):
@@ -106,6 +109,19 @@ def _rebuild_from_scan(project_root: Path) -> dict:
             rel_path = str(f.relative_to(agent_dir)).replace("\\", "/")
             if rel_path not in result[key]:
                 result[key].append(rel_path)
+
+    # Scan memory/ (pitfalls, decisions, preferences, reference)
+    memory_dir = agent_dir / "memory"
+    if memory_dir.exists():
+        for f in sorted(memory_dir.rglob("*.md")):
+            # Derive keyword from filename
+            key = f.stem.lower().replace("-", " ")
+            if key not in result:
+                result[key] = []
+            rel_path = str(f.relative_to(agent_dir)).replace("\\", "/")
+            if rel_path not in result[key]:
+                result[key].append(rel_path)
+
     return result
 
 
@@ -142,7 +158,12 @@ def safe_merge_sync(project_root: Path) -> tuple[bool, str]:
     # Demoted atoms: remove from _global_atoms, clean keyword refs
     for aid in list(existing_global.keys()):
         if aid in current_atoms and current_atoms[aid].get("demoted", False):
-            _remove_atom_from_keywords(idx, aid)
+            atom = current_atoms[aid]
+            _remove_atom_from_keywords(
+                idx, aid,
+                pointer=atom.get("pointer"),
+                triggers=atom.get("trigger", [])
+            )
             del existing_global[aid]
             changed = True
 
@@ -189,8 +210,10 @@ def _add_atom_to_keywords(idx: dict, atom: dict):
             idx[key].append(atom["id"])
 
 
-def _remove_atom_from_keywords(idx: dict, atom_id: str):
+def _remove_atom_from_keywords(idx: dict, atom_id: str, pointer: str = None, triggers: list[str] = None):
     """Remove all references to atom_id from keyword entries.
+    If pointer and triggers are provided, convert the atom's pointer to local
+    keyword entries so the knowledge isn't lost (spec 3.4 rule 5).
     If atom_id was the last entry for a keyword and no local file refs remain,
     remove the keyword entry entirely."""
     to_remove = []
@@ -199,6 +222,11 @@ def _remove_atom_from_keywords(idx: dict, atom_id: str):
             continue
         if isinstance(refs, list) and atom_id in refs:
             refs.remove(atom_id)
+            # If pointer provided, add it as a local file ref for the atom's triggers
+            if pointer and triggers:
+                for trigger in triggers:
+                    if trigger.lower() == key and pointer not in refs:
+                        refs.append(pointer)
             if not refs:
                 to_remove.append(key)
     for key in to_remove:
