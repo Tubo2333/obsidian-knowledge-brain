@@ -28,7 +28,12 @@ Seed vocabulary for `[ERROR: type=<value>]` annotations. Agent MUST use values f
 ### 8. Agent-Behavior / Agent 行为
 `naming-discipline` `compliance-gap` `llm-behavior` `vendor-lockin` `cost-estimate` `knowledge-decay` `llm-api-config` `concurrency-design` `metric-undefined` `design-contradiction`
 
-### 9. Other / 其他
+### 9. Missed-Knowledge / 知识遗漏 (v4.0)
+`missed-atom` `missed-record`
+
+> v4.0 added: static error types with params. `missed-atom`: pre-action step was skipped and Agent hit a documented pitfall. `missed-record`: post-error [ERROR:] stub was not written to inbox. / v4.0 新增：带参数的静态错误类型。`missed-atom`：跳过强制知识步骤导致踩坑。`missed-record`：错误修复后未写 [ERROR:] 存根。
+
+### 10. Other / 其他
 Catch-all (兜底分类). ≥3 occurrences of same NEW type → propose new subcategory or top-level category.
 
 ## Extension Protocol / 扩展协议
