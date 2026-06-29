@@ -153,9 +153,14 @@ def validate_schema(data: dict) -> tuple[bool, str]:
         # project_origin must be array
         if not isinstance(atom.get("project_origin"), list):
             return False, f"atom[{i}].project_origin must be an array"
-        # promoted must be valid date
-        if not atom.get("promoted"):
+        # promoted must be valid ISO date
+        promoted = atom.get("promoted", "")
+        if not promoted:
             return False, f"atom[{i}].promoted is required"
+        try:
+            datetime.fromisoformat(promoted)
+        except (ValueError, TypeError):
+            return False, f"atom[{i}].promoted '{promoted}' is not a valid ISO date"
 
     # Cap check: active atoms (demoted != true) ≤ max_atoms
     active_count = sum(1 for a in atoms if not a.get("demoted", False))
@@ -311,9 +316,11 @@ def _emergency_evict(data: dict) -> str | None:
         return atom["id"]
 
     # Priority 2: longest time since last_triggered
-    active.sort(key=lambda x: x[1].get("last_triggered", x[1]["promoted"]))
     # Priority 3 (tiebreaker): fewest project_origin
-    active.sort(key=lambda x: len(x[1].get("project_origin", [])))
+    active.sort(key=lambda x: (
+        x[1].get("last_triggered", x[1]["promoted"]),
+        len(x[1].get("project_origin", []))
+    ))
     idx, atom = active[0]
     data["atoms"][idx]["demoted"] = True
     data["atoms"][idx]["demoted_date"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
