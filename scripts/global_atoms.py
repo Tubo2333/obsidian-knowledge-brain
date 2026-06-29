@@ -4,7 +4,10 @@ obsidian-knowledge-brain v4.0 — Global Atom Pointer Table operations.
 Single source of truth: ~/.obsidian-knowledge-brain/atoms.json
 Read/write with .bak backup, .lock concurrency guard (10-min TTL), and full schema validation.
 """
-import json, os, hashlib, time
+import json
+import hashlib
+import os
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -16,6 +19,8 @@ UNINSTALLED_PATH = ATOMS_DIR / ".uninstalled"
 LOCK_TTL_SECONDS = 600  # 10 minutes
 VALID_TYPES = {"never", "how-to", "pitfall"}
 VALID_PHASES = {"pre", "during", "post"}
+MAX_TRIGGERS_PER_ATOM = 5
+MAX_ONE_LINER_CHARS = 120
 
 def ensure_atoms_dir() -> Path:
     """Create ~/.obsidian-knowledge-brain/ if it doesn't exist. Idempotent."""
@@ -140,12 +145,12 @@ def validate_schema(data: dict) -> tuple[bool, str]:
             return False, f"atom[{i}].phase '{atom.get('phase')}' not in {VALID_PHASES}"
         # trigger array 1-5
         trigger = atom.get("trigger")
-        if not isinstance(trigger, list) or not (1 <= len(trigger) <= 5):
+        if not isinstance(trigger, list) or not (1 <= len(trigger) <= MAX_TRIGGERS_PER_ATOM):
             return False, f"atom[{i}].trigger must be array of 1-5 strings, got {len(trigger) if isinstance(trigger, list) else type(trigger).__name__}"
         # one_liner ≤ 120 chars
         one_liner = atom.get("one_liner", "")
-        if len(one_liner) > 120:
-            return False, f"atom[{i}].one_liner exceeds 120 chars ({len(one_liner)})"
+        if len(one_liner) > MAX_ONE_LINER_CHARS:
+            return False, f"atom[{i}].one_liner exceeds {MAX_ONE_LINER_CHARS} chars ({len(one_liner)})"
         # pointer must contain #
         pointer = atom.get("pointer", "")
         if "#" not in pointer:
@@ -227,6 +232,12 @@ def promote_atom(atom_data: dict) -> tuple[bool, str]:
     """Full promotion write protocol per spec §6.2.
     atom_data must have: id, type, phase, trigger, pointer, project_origin, one_liner
     Returns (success, message)."""
+    # Early validation — reject before acquiring lock
+    required = ["id", "type", "phase", "trigger", "pointer", "project_origin", "one_liner"]
+    missing = [k for k in required if k not in atom_data]
+    if missing:
+        return False, f"Missing required fields: {missing}"
+
     if not acquire_lock():
         return False, "Lock contention: another promotion in progress"
 
@@ -328,39 +339,49 @@ def _emergency_evict(data: dict) -> str | None:
 
 def mark_demoted(atom_id: str) -> bool:
     """T3: mark atom as demoted. Does NOT delete (90-day sync window)."""
-    data = read_atoms()
-    if data is None:
+    if not acquire_lock():
         return False
-    for atom in data["atoms"]:
-        if atom["id"] == atom_id:
-            atom["demoted"] = True
-            atom["demoted_date"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            return write_atoms(data)
-    return False
+    try:
+        data = read_atoms()
+        if data is None:
+            return False
+        for atom in data["atoms"]:
+            if atom["id"] == atom_id:
+                atom["demoted"] = True
+                atom["demoted_date"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                return write_atoms(data)
+        return False
+    finally:
+        release_lock()
 
 def cleanup_demoted(older_than_days: int = 90) -> list[str]:
     """T3: final removal of atoms demoted > older_than_days ago.
     Returns list of removed atom IDs."""
-    data = read_atoms()
-    if data is None:
+    if not acquire_lock():
         return []
-    cutoff = datetime.now(timezone.utc)
-    removed = []
-    new_atoms = []
-    for atom in data["atoms"]:
-        if atom.get("demoted", False) and atom.get("demoted_date"):
-            try:
-                demoted_date = datetime.fromisoformat(atom["demoted_date"])
-                if (cutoff - demoted_date).days > older_than_days:
-                    removed.append(atom["id"])
-                    continue
-            except ValueError:
-                pass
-        new_atoms.append(atom)
-    if removed:
-        data["atoms"] = new_atoms
-        write_atoms(data)
-    return removed
+    try:
+        data = read_atoms()
+        if data is None:
+            return []
+        cutoff = datetime.now(timezone.utc)
+        removed = []
+        new_atoms = []
+        for atom in data["atoms"]:
+            if atom.get("demoted", False) and atom.get("demoted_date"):
+                try:
+                    demoted_date = datetime.fromisoformat(atom["demoted_date"])
+                    if (cutoff - demoted_date).days > older_than_days:
+                        removed.append(atom["id"])
+                        continue
+                except ValueError:
+                    pass
+            new_atoms.append(atom)
+        if removed:
+            data["atoms"] = new_atoms
+            write_atoms(data)
+        return removed
+    finally:
+        release_lock()
 
 def get_atoms_by_phase(phase: str) -> list[dict]:
     """Get all active atoms for a given phase (pre/during/post)."""
