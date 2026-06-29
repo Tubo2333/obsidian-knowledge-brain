@@ -1,4 +1,4 @@
-# Obsidian Knowledge Brain v3.0 / Obsidian 知识大脑 v3.0
+# Obsidian Knowledge Brain v4.0 / Obsidian 知识大脑 v4.0
 
 **Schema**: 4.0 | **Lines**: ≤200 | **Load**: Always (if skill active)
 **Platforms**: **Claude Code** — full auto (hooks + cron). **Cursor / Gemini CLI / Codex** — manual trigger (type "收尾" to save, "诊断" to bootstrap). Requires an AI Agent with file read/write. Not designed for plain-terminal or Agent-free use. / CC 全自动，其他平台需手动输入口令触发。
@@ -7,7 +7,7 @@
 
 **What this does / 它做什么**: Every time you debug an error or make a technical decision with an AI agent, that knowledge vanishes when the session ends. This skill **remembers** — it captures your decisions and error fixes across sessions, builds a searchable knowledge base, and evolves project rules automatically. A personal project librarian that learns from every conversation. / 每次和 AI 编程解决了 bug、做了技术决策，下次对话就忘了。这个 Skill 帮你**记住**——自动捕获每次会话的决策和错误，构建可检索的知识库，持续进化项目规则。一个从每次对话中学习的项目图书管理员。
 
-**Obsidian?** Not required. v3.0 stores knowledge as `.md` files in `.claude/`. Open your project as an Obsidian vault to browse the knowledge graph — purely optional. See §0a. / 非必需。用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
+**Obsidian?** Not required. v4.0 stores knowledge as `.md` files in your agent directory. Open your project as an Obsidian vault to browse the knowledge graph — purely optional. See §0a. / 非必需。用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
 
 → **First time?** See `references/quickstart.md` (5-minute walkthrough / 5分钟上手).
 
@@ -29,7 +29,7 @@ Format: `[DECISION: <summary> | context: <why> | project: <slug> | scope: projec
 
 **Recommended / 推荐**: Python 3.x (for hook scripts; all protocols work manually without it) + Git (version-control your knowledge base). / Python 3.x（钩子脚本）+ Git（版本控制）。
 
-**Obsidian?** Not required. v3.0 stores knowledge as plain `.md` in `.claude/`. Open your project folder as an Obsidian vault to browse the knowledge graph — purely optional. v2.0 users: old vault data preserved in `archive/`, `.claude/memory/` is the new home. / 非必需。v3.0 用纯 `.md` 存储，用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
+**Obsidian?** Not required. v4.0 stores knowledge as plain `.md` in your agent directory. Open your project folder as an Obsidian vault to browse the knowledge graph — purely optional. v2.0 users: old vault data preserved in `archive/`. / 非必需。v4.0 用纯 `.md` 存储，用 Obsidian 打开项目文件夹即可浏览知识图谱——完全可选。
 
 ## 0b. Sandbox Boundary / 沙箱边界
 
@@ -38,6 +38,37 @@ Format: `[DECISION: <summary> | context: <why> | project: <slug> | scope: projec
 **Global store / 全局存储 (v4.0)**: `~/.obsidian-knowledge-brain/` — a single, well-known directory outside the project. Contains `atoms.json` (global atom pointer table, ≤20 active atoms), `atoms.json.bak` (write-backup), and `atoms.json.lock` (concurrent write guard). Written ONLY during install/uninstall/promotion. During normal Agent sessions, atoms.json receives ONLY `last_triggered` timestamp updates when atoms are matched (metadata, not knowledge modification). All other writes are promotion-only. Read during Pre-action sync. No other paths outside the project are touched. / 全局存储目录，仅在安装/卸载/晋升时写入，正常会话只更新 last_triggered 时间戳。
 
 **Uninstall / 卸载**: `--uninstall` flag creates `.uninstalled` marker → Pre-action instruction removed from always-loaded file → `_global_atoms` removed from keyword index → atoms.json preserved (user may reinstall). / 卸载时保留 atoms.json 以备重新安装。
+
+## 0c. Known Limitations / 已知局限 (Agent: read before acting)
+
+**L1 — Pre-action is MUST, not hook.** You are responsible for executing Pre/During/Post steps from the injected instruction. Skip Pre + hit documented pitfall → `[ERROR: type=missed-atom | atom_id=<id>]`. Skip Post error recording → `[ERROR: type=missed-record | error_type=<type>]`.
+
+**L2 — Gemini CLI / Codex always-loaded files unverified.** `.gemini/extensions.json` and `.codex/codex.yaml` are listed but NOT tested. On these platforms, verify the file is actually loaded by your platform. If not → read `~/.obsidian-knowledge-brain/atoms.json` directly.
+
+**L3 — JSON array-top-level not supported for injection.** `pre_action.py` assumes `{` object-top-level. Unreachable in practice (all known platforms use Markdown/YAML/plain). If encountered → skip injection, note it.
+
+**L4 — install.py version mismatch warns but doesn't exit.** If SKILL.md schema ≠ install.py version → stop, ask user to resolve.
+
+**L5 — Cross-machine atoms.json is manual.** Each machine has its own `~/` atoms.json. Machines converge: same root_cause_id → same content-hash atom ID. To sync manually, copy `~/.obsidian-knowledge-brain/atoms.json`.
+
+**L6 — Dual-platform: shared atoms.json, independent keyword indexes.** If `.claude/` + `.cursor/` coexist → run install.py for each. Pre-action does NOT auto-appear in both.
+
+**L7 — Non-CC platforms: T1/T2/T3 are manual.** Pre-action still auto (in always-loaded file). But session-start, "收尾", "健康检查" require user trigger words. Remind user at appropriate moments.
+
+**L8 — Pointer drift.** Atom pointers (`rules/foo.md#L6-L8`) may go stale. Pre-action: lines mismatch topic → load entire file. T3: file missing → flag `pointer_broken: true`. Not auto-repaired — note drift for next T2/T3.
+
+**L9 — Recovery from `_global_atoms` loses metadata.** Both atoms.json + .bak corrupt → rebuild from `_global_atoms`. Recovers IDs/types/phases/pointers/triggers. Loses `project_origin` (→`[current]`), `promoted` (→now), `demoted` (→false). T3 flags as "recovered, needs review."
+
+### Platform Matrix / 平台矩阵
+
+| | Claude Code | Cursor / Gemini CLI / Codex |
+|---|------------|---------------------------|
+| Pre-action | ✅ Auto | ✅ Auto (if always-loaded file exists) |
+| T1/T2/T3 | ✅ Hook/Cron auto | ○ Manual: user trigger words |
+| Promotion | ✅ T2 auto | ○ Manual: Agent prompts during T2 |
+| install.py | ✅ `python scripts/install.py` | ✅ `--platform <X>` |
+
+○ = remind user.
 
 ## 1. Phase Detection / 相位检测 (Execute FIRST)
 
