@@ -203,12 +203,15 @@ def acquire_lock() -> bool:
             with open(LOCK_PATH, "r", encoding="utf-8") as f:
                 lock_data = json.load(f)
             lock_time = datetime.fromisoformat(lock_data["timestamp"])
+            # Handle both naive (legacy) and aware timestamps
+            if lock_time.tzinfo is None:
+                lock_time = lock_time.replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - lock_time).total_seconds()
             if age > LOCK_TTL_SECONDS:
                 LOCK_PATH.unlink()  # stale, remove
             else:
                 return False  # genuine concurrent access
-        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError, OSError):
             LOCK_PATH.unlink()  # corrupt lock, remove
 
     try:
