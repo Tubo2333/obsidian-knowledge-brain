@@ -1,6 +1,6 @@
-# obsidian-knowledge-brain v3.0 / Obsidian 知识大脑 v3.0
+# obsidian-knowledge-brain v4.0 / Obsidian 知识大脑 v4.0
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-4.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Claude%20Code%20%7C%20Cursor%20%7C%20Gemini%20%7C%20Codex-lightgrey)
 
@@ -33,6 +33,27 @@ v2.0 需要 Obsidian vault、Python 定时脚本、Claude Code hooks。强大但
 The core idea is the same — [DECISION] and [ERROR] annotations → MECE classification → pattern extraction → rule evolution. But v3.0 makes the Agent the executor, not a Python pipeline.
 
 核心思路不变：[DECISION] 和 [ERROR] 标注 → 互斥穷尽分类 → 模式提取 → 规则进化。但 v3.0 让 Agent 成为执行者，而非 Python 流水线。
+
+---
+
+## v3.0 → v4.0: What Changed / 演进
+
+v3.0 solved v2.0's "second brain bloat" by making knowledge project-local. The trade-off: knowledge learned in one project never transfers to another. v3.0 解决了 v2.0 的臃肿，但知识被困在单个项目里。
+
+**v4.0 adds global cross-project knowledge / v4.0 增加了跨项目全局知识：**
+- **Global Atom Table / 全局原子表** — `~/.obsidian-knowledge-brain/atoms.json`, cap ≤20 active atoms, root-cause hash dedup
+- **Promotion / 晋升** — Same error in ≥2 independent projects → human confirms → promoted to global table
+- **Pre-Action Triggers / 预行动触发器** — Pre/During/Post three-phase MUST instructions injected into always-loaded file
+- **Demotion Lifecycle / 降级生命周期** — 365 days no trigger → auto-flag, 90-day sync window → delete
+- **Cross-Platform / 跨平台** — Tier 1 Claude Code full auto (hooks), Tier 2 Cursor/Gemini/Codex (pre-action auto)
+
+| | v3.0 | v4.0 |
+|---|------|------|
+| **Knowledge sharing / 知识共享** | Project-local only | Local + global atoms (≤20) |
+| **Pre-action** | Rule table (growing) | Fixed MUST + 3-phase + debounce |
+| **Cross-project learning** | None | Recurrent pitfalls only (signal) |
+| **Global path** | None | `~/.obsidian-knowledge-brain/` |
+| **Uninstall** | Manual | `--uninstall` + `.uninstalled` marker |
 
 ---
 
@@ -135,23 +156,26 @@ obsidian-knowledge-brain/
 │   ├── t2-session-end.md       ← Session end close protocol / 会话结束协议
 │   └── t3-periodic-check.md    ← Weekly health check 7-dim scan / 定期健康检查
 └── scripts/                    ← 17 Python scripts (v3.0 hook scripts + v2 utilities)
-    ├── session_start.py        ← T1 hook: SessionStart briefing / 会话启动简报 (NEW v3.0)
-    ├── session_close.py        ← T2 hook: session-end prompt + validator / 收尾协议+验证 (NEW v3.0)
-    ├── session_harvester.py    ← Hook transcript harvester / 会话转录收割器
-    ├── install.py              ← Cross-platform path setup / 跨平台路径安装
-    ├── runner.py               ← Pipeline orchestrator (5-step) / 管道编排器
-    ├── analyzer.py             ← Root-cause analysis (keyword + LLM) / 根因分析
-    ├── maintainer.py           ← Rule lifecycle + merge detection / 规则维护
-    ├── reporter.py             ← Weekly reports + index rebuild / 周报+索引重建
-    ├── compiler.py             ← CLAUDE.md index sync / 索引同步
-    ├── backup.py               ← JSONL transcript backup / 会话备份
-    ├── config.py               ← Configuration loader / 配置加载器
-    ├── setup.py                ← Interactive vault setup (v2 legacy) / 交互式安装 (v2 遗留)
-    ├── validate_frontmatter.py ← Frontmatter field validation / 元数据字段校验
-    ├── link_validator.py       ← Wiki-link integrity checker / 双向链接完整性检查
-    ├── score_sessions.py       ← Session scoring utility / 会话评分工具
-    ├── reformat_tables.py      ← Table reformatter / 表格格式化
-    └── config.example.yaml     ← Sample configuration / 配置示例
+	    ├── global_atoms.py          ← NEW v4.0: atom table CRUD + promotion/demotion
+	    ├── keyword_index.py         ← NEW v4.0: safe merge sync + .bak protection
+	    ├── pre_action.py            ← NEW v4.0: format detect + instruction injection
+	    ├── install.py               ← REWRITTEN v4.0: 9-step idempotent installer
+	    ├── session_start.py        ← T1 hook: SessionStart briefing / 会话启动简报 (NEW v3.0)
+	    ├── session_close.py        ← T2 hook: session-end prompt + validator / 收尾协议+验证 (NEW v3.0)
+	    ├── session_harvester.py    ← Hook transcript harvester / 会话转录收割器
+	    ├── runner.py               ← Pipeline orchestrator (5-step) / 管道编排器
+	    ├── analyzer.py             ← Root-cause analysis (keyword + LLM) / 根因分析
+	    ├── maintainer.py           ← Rule lifecycle + merge detection / 规则维护
+	    ├── reporter.py             ← Weekly reports + index rebuild / 周报+索引重建
+	    ├── compiler.py             ← CLAUDE.md index sync / 索引同步
+	    ├── backup.py               ← JSONL transcript backup / 会话备份
+	    ├── config.py               ← Configuration loader / 配置加载器
+	    ├── setup.py                ← Interactive vault setup (v2 legacy) / 交互式安装 (v2 遗留)
+	    ├── validate_frontmatter.py ← Frontmatter field validation / 元数据字段校验
+	    ├── link_validator.py       ← Wiki-link integrity checker / 双向链接完整性检查
+	    ├── score_sessions.py       ← Session scoring utility / 会话评分工具
+	    ├── reformat_tables.py      ← Table reformatter / 表格格式化
+	    └── config.example.yaml     ← Sample configuration / 配置示例
 ```
 
 ---
@@ -169,6 +193,9 @@ A: ~3 sessions × ~7 annotations → 20 total → pattern extraction activates. 
 
 **Q: Does it call external APIs? / 会调用外部 API 吗？**
 A: No. All classification is deterministic (MECE rules + heuristic matching). LLM-based pattern extraction is an optional Tier 2 feature gated behind explicit human opt-in. / 不会。全部分类是确定性的（MECE 规则 + 启发式匹配）。LLM 模式提取是可选的 Tier 2 功能，需人工显式激活。
+
+**Q: What's the global atom table? / 什么是全局原子表？**
+A: `~/.obsidian-knowledge-brain/atoms.json` stores up to 20 cross-project knowledge atoms. When the same error occurs in 2+ projects, it's promoted here so every project benefits. / 存储最多 20 条跨项目知识原子，同一错误在 2+ 项目中复现时晋升到此。
 
 ---
 

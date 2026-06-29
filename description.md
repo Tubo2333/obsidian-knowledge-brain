@@ -1,9 +1,3 @@
-# obsidian-knowledge-brain v3.0
+# obsidian-knowledge-brain v4.0
 
-An AI agent skill that remembers every technical decision and bug fix across sessions — and learns from them. Zero dependencies, no external vault, works on Claude Code, Cursor, Gemini CLI, and Codex.
-
-**How it works**: At session end, type "收尾" / "wrap up". The Agent classifies your decisions and error fixes into `.claude/memory/`, builds cross-references, and updates project rules. After ~20 annotations across ~3 sessions, it starts detecting patterns: "You've hit this same GFW error 3 times across 2 projects — here's the known fix."
-
-**Key features**: Auto-bootstrap from chaos (scan → plan → build skeleton), cold-start protocol (classify-only until 20 annotations), 7-dimension health checks (ceiling, contradictions, orphans, GC), bilingual Chinese/English, optional Obsidian graph view.
-
-**Cost**: Zero. No API calls, no servers. ~3K-8K tokens/session for Agent classification.
+An AI agent skill that remembers every technical decision and bug fix across your sessions — and learns from them across projects. v4.0 adds a global atom table: when the same pitfall occurs in ≥2 projects, it's promoted to all projects automatically. Zero dependencies, platform-adaptive (Claude Code full auto, Cursor/Gemini/Codex manual). / 让 AI Agent 跨会话跨项目记住技术决策和错误修复的 Skill。v4.0 增加全局原子表：同一坑在 ≥2 个项目中复现时自动同步全部项目。零依赖，跨平台适配。
