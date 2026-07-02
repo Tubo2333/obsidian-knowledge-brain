@@ -373,6 +373,9 @@ def cleanup_demoted(older_than_days: int = 90) -> list[str]:
             if atom.get("demoted", False) and atom.get("demoted_date"):
                 try:
                     demoted_date = datetime.fromisoformat(atom["demoted_date"])
+                    # Handle timezone-naive datetimes from legacy atoms
+                    if demoted_date.tzinfo is None:
+                        demoted_date = demoted_date.replace(tzinfo=timezone.utc)
                     if (cutoff - demoted_date).days > older_than_days:
                         removed.append(atom["id"])
                         continue
